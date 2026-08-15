@@ -1,0 +1,14 @@
+{
+  "cluster": {
+    "min_size": 2
+  },
+  "optimize": {
+    "stale_threshold": 50
+  },
+  "cron": {
+    "timezone": "Asia/Jakarta",
+    "hour": 16,
+    "minute": 30,
+    "date": -1
+  }
+}

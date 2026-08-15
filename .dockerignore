@@ -1,0 +1,6 @@
+/target
+/log
+/scripts
+/out
+**/*.rs.bk
+Cargo.lock.bak

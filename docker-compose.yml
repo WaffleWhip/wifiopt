@@ -1,0 +1,17 @@
+services:
+  wifiopt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wifiopt:latest
+    container_name: wifiopt
+    restart: unless-stopped
+    mem_limit: 24g
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=info
+      - TZ=Asia/Jakarta
+    volumes:
+      - ./log:/app/log
+      - ./config.json:/app/config.json:ro
