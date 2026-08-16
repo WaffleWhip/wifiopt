@@ -17,7 +17,7 @@ RUN cargo build --release
 
 FROM debian:trixie-slim AS runtime
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates cron tzdata \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 ENV TZ=Asia/Jakarta
@@ -27,10 +27,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
 WORKDIR /app
 COPY --from=builder /app/target/release/wifiopt /usr/local/bin/wifiopt
 
-RUN mkdir -p /app/log \
-    && echo '30 16 * * * cd /app && /usr/local/bin/wifiopt --date $(date -d "yesterday" +\%Y\%m\%d) >> /app/log/cron.log 2>&1' > /etc/cron.d/wifiopt-cron \
-    && chmod 0644 /etc/cron.d/wifiopt-cron \
-    && crontab /etc/cron.d/wifiopt-cron
+RUN mkdir -p /app/log
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

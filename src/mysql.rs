@@ -251,26 +251,6 @@ pub async fn upload_optimize(
     }
     let mut tx = pool.begin().await?;
 
-    let sql = format!(
-        "INSERT INTO `{table}` (reg, sn, clusterid_2g, ch_before_2g, cost_before_2g, \
-         ch_after_2g, cost_after_2g, status_2g, clusterid_5g, ch_before_5g, cost_before_5g, \
-         ch_after_5g, cost_after_5g, status_5g) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
-         ON DUPLICATE KEY UPDATE \
-         clusterid_2g=VALUES(clusterid_2g), \
-         ch_before_2g=VALUES(ch_before_2g), \
-         cost_before_2g=VALUES(cost_before_2g), \
-         ch_after_2g=VALUES(ch_after_2g), \
-         cost_after_2g=VALUES(cost_after_2g), \
-         status_2g=VALUES(status_2g), \
-         clusterid_5g=VALUES(clusterid_5g), \
-         ch_before_5g=VALUES(ch_before_5g), \
-         cost_before_5g=VALUES(cost_before_5g), \
-         ch_after_5g=VALUES(ch_after_5g), \
-         cost_after_5g=VALUES(cost_after_5g), \
-         status_5g=VALUES(status_5g), \
-         updated_at=CURRENT_TIMESTAMP"
-    );
-
     let batch_size = 500_usize;
     let mut count = 0usize;
     for chunk in rows.chunks(batch_size) {

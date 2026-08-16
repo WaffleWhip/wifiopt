@@ -113,26 +113,6 @@ pub fn parse_possible_ch(s: &str) -> Vec<u8> {
     out
 }
 
-pub fn pick_own_radios(cfg: &ConfigMap) -> (Option<&RadioConfig>, Option<&RadioConfig>) {
-    let mut g2: Option<&RadioConfig> = None;
-    let mut g5: Option<&RadioConfig> = None;
-    for r in cfg.values() {
-        if !r.ssid_enable {
-            continue;
-        }
-        let Some(ch) = channel_to_u8(&r.channel) else { continue };
-        if ch == 0 {
-            continue;
-        }
-        if ch <= 14 && g2.is_none() {
-            g2 = Some(r);
-        } else if ch > 14 && g5.is_none() {
-            g5 = Some(r);
-        }
-    }
-    (g2, g5)
-}
-
 #[derive(Debug, Serialize)]
 pub struct OwnedRadio {
     pub channel: Option<u8>,
@@ -145,53 +125,6 @@ pub struct NeighRow {
     pub channel: u8,
     pub bssid: String,
     pub rssi: i32,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ParsedRow {
-    pub sn: String,
-    pub ch_ont_2g: Option<u8>,
-    pub ch_ont_5g: Option<u8>,
-    pub own_2g: Option<OwnedRadio>,
-    pub own_5g: Option<OwnedRadio>,
-    pub neighbors: Vec<NeighRow>,
-}
-
-pub fn build_parsed(
-    sn: String,
-    ch_ont_2g: Option<u8>,
-    ch_ont_5g: Option<u8>,
-    cfg: &ConfigMap,
-    nei: &NeighborMap,
-) -> ParsedRow {
-    let (g2, g5) = pick_own_radios(cfg);
-    let to_owned = |r: Option<&RadioConfig>| {
-        r.map(|r| OwnedRadio {
-            channel: channel_to_u8(&r.channel),
-            bssid: r.bssid.clone(),
-            possible_channel: r
-                .possible_channel
-                .as_deref()
-                .map(parse_possible_ch)
-                .unwrap_or_default(),
-        })
-    };
-    let neighbors: Vec<NeighRow> = nei
-        .values()
-        .map(|v| NeighRow {
-            channel: v.channel,
-            bssid: v.bssid.clone(),
-            rssi: v.signal_strength,
-        })
-        .collect();
-    ParsedRow {
-        sn,
-        ch_ont_2g,
-        ch_ont_5g,
-        own_2g: to_owned(g2),
-        own_5g: to_owned(g5),
-        neighbors,
-    }
 }
 
 fn owned_from_cfg(r: &RadioConfig) -> OwnedRadio {

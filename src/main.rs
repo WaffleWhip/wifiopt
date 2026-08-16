@@ -5,11 +5,13 @@ mod optimize;
 mod parse;
 
 use anyhow::{Context, Result};
+use chrono::{Duration, Local};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::env;
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration as StdDuration, Instant};
+use tokio::time::sleep;
 
 #[derive(Debug, Deserialize, Clone)]
 struct Config {
@@ -115,21 +117,27 @@ impl CronCfg {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenvy::dotenv().ok();
+dotenvy::dotenv().ok();
 
     let mut date: Option<String> = None;
     let mut region_filter: Option<u8> = None;
-    let mut args = env::args().skip(1);
-    while let Some(a) = args.next() {
+    let mut loop_mode = false;
+    let mut iter = env::args().skip(1);
+    while let Some(a) = iter.next() {
         match a.as_str() {
-            "--date" => date = Some(args.next().unwrap_or_default()),
+            "--date" => date = iter.next(),
             "--region" | "--reg" => {
-                if let Some(v) = args.next() {
+                if let Some(v) = iter.next() {
                     region_filter = v.parse().ok();
                 }
             }
+            "--loop" => loop_mode = true,
             _ => {}
         }
+    }
+
+    if loop_mode {
+        return run_scheduler_loop().await;
     }
 
     let cfg = Config::load("config.json").context("load config.json")?;
@@ -410,4 +418,64 @@ async fn run_cluster_distribution(
         }
     }
     Ok((out_2g.unwrap(), out_5g.unwrap()))
+}
+
+async fn run_scheduler_loop() -> Result<()> {
+    eprintln!("[scheduler] wifiopt loop mode started (TZ={})", std::env::var("TZ").unwrap_or_default());
+    loop {
+        let cfg = Config::load("config.json").context("load config.json")?;
+        let now = Local::now();
+        let today_at = now
+            .date_naive()
+            .and_hms_opt(cfg.cron.hour as u32, cfg.cron.minute as u32, 0)
+            .and_then(|dt| dt.and_local_timezone(Local).single());
+        let next_run = match today_at {
+            Some(t) if t > now => t,
+            _ => {
+                let tomorrow = now.date_naive().succ_opt().unwrap();
+                tomorrow
+                    .and_hms_opt(cfg.cron.hour as u32, cfg.cron.minute as u32, 0)
+                    .and_then(|dt| dt.and_local_timezone(Local).single())
+                    .unwrap_or_else(|| now + Duration::days(1))
+            }
+        };
+        let sleep_sec = (next_run - now).num_seconds().max(1) as u64;
+        eprintln!(
+            "[scheduler] next run at {} (sleep {}s = {:.1}h)",
+            next_run.format("%Y-%m-%d %H:%M:%S %Z"),
+            sleep_sec,
+            sleep_sec as f64 / 3600.0
+        );
+
+        sleep(StdDuration::from_secs(sleep_sec)).await;
+
+        // Re-read config (schedule/date_offset can change while sleeping).
+        let cfg = Config::load("config.json").context("load config.json")?;
+        let target_date = cfg
+            .cron
+            .resolve_date(None)
+            .context("resolve date")?;
+        let log_date = format!("{target_date}");
+        let log = match logger::Logger::new(&log_date) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("[scheduler] logger init failed: {e:?}");
+                continue;
+            }
+        };
+        log.log("[scheduler] trigger: wifiopt daily run");
+        log.log(&format!(
+            "config: timezone={} hour={} minute={} date_offset={}",
+            cfg.cron.timezone, cfg.cron.hour, cfg.cron.minute, cfg.cron.date
+        ));
+
+        match run_daily(&cfg, &target_date, None, &log).await {
+            Ok(_) => log.log("[scheduler] daily run completed"),
+            Err(e) => log.log(&format!("[scheduler] daily run failed: {e:?}")),
+        }
+
+        // Exit so docker restarts the container — releases accumulated heap memory.
+        log.log("[scheduler] exiting for container restart");
+        std::process::exit(0);
+    }
 }
