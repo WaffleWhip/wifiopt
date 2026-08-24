@@ -49,6 +49,7 @@ Table: `wifi_optimize_20260817`
   "ch_after_2g": 1,
   "cost_after_2g": 0.0,
   "status_2g": "CHANGE",
+  "clusterid_5g": null,
   "ch_before_5g": 149,
   "cost_before_5g": 0.0,
   "ch_after_5g": 149,
