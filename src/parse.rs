@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -43,10 +43,17 @@ where
 {
     let v = Value::deserialize(d)?;
     match v {
-        Value::Number(n) => n.as_u64().and_then(|x| u8::try_from(x).ok()).ok_or_else(|| serde::de::Error::custom("out of range")),
+        Value::Number(n) => n
+            .as_u64()
+            .and_then(|x| u8::try_from(x).ok())
+            .ok_or_else(|| serde::de::Error::custom("out of range")),
         Value::String(s) => {
             let t = s.trim();
-            if t.is_empty() { Ok(0) } else { t.parse::<u8>().map_err(serde::de::Error::custom) }
+            if t.is_empty() {
+                Ok(0)
+            } else {
+                t.parse::<u8>().map_err(serde::de::Error::custom)
+            }
         }
         Value::Null => Ok(0),
         _ => Err(serde::de::Error::custom("expected number or string")),
@@ -59,10 +66,17 @@ where
 {
     let v = Value::deserialize(d)?;
     match v {
-        Value::Number(n) => n.as_i64().and_then(|x| i32::try_from(x).ok()).ok_or_else(|| serde::de::Error::custom("number out of range")),
+        Value::Number(n) => n
+            .as_i64()
+            .and_then(|x| i32::try_from(x).ok())
+            .ok_or_else(|| serde::de::Error::custom("number out of range")),
         Value::String(s) => {
             let t = s.trim();
-            if t.is_empty() { Ok(0) } else { t.parse::<i32>().map_err(serde::de::Error::custom) }
+            if t.is_empty() {
+                Ok(0)
+            } else {
+                t.parse::<i32>().map_err(serde::de::Error::custom)
+            }
         }
         Value::Null => Ok(0),
         _ => Err(serde::de::Error::custom("expected number or string")),
@@ -73,19 +87,19 @@ pub type ConfigMap = HashMap<String, RadioConfig>;
 pub type NeighborMap = HashMap<String, Neighbor>;
 
 pub fn parse_config(s: &str) -> Result<ConfigMap> {
-    let v: Value = serde_json::from_str(s).map_err(|e| anyhow!("json_config: {e}"))?;
-    match v {
-        Value::Object(_) => serde_json::from_value(v).map_err(|e| anyhow!("json_config: {e}")),
-        _ => Ok(ConfigMap::new()),
+    let t = s.trim();
+    if t.is_empty() || t == "{}" || t == "null" {
+        return Ok(ConfigMap::new());
     }
+    serde_json::from_str::<ConfigMap>(t).or_else(|_| Ok(ConfigMap::new()))
 }
 
 pub fn parse_neighbor(s: &str) -> Result<NeighborMap> {
-    let v: Value = serde_json::from_str(s).map_err(|e| anyhow!("json_neighbor: {e}"))?;
-    match v {
-        Value::Object(_) => serde_json::from_value(v).map_err(|e| anyhow!("json_neighbor: {e}")),
-        _ => Ok(NeighborMap::new()),
+    let t = s.trim();
+    if t.is_empty() || t == "{}" || t == "null" {
+        return Ok(NeighborMap::new());
     }
+    serde_json::from_str::<NeighborMap>(t).or_else(|_| Ok(NeighborMap::new()))
 }
 
 pub fn channel_to_u8(v: &Value) -> Option<u8> {
@@ -101,7 +115,7 @@ pub fn parse_possible_ch(s: &str) -> Vec<u8> {
     for tok in s.split(',') {
         let t = tok.trim();
         if let Some((lo, hi)) = t.split_once('-') {
-            if let (Ok(a), Ok(b)) = (lo.parse::<u8>(), hi.parse::<u8>()) {
+            if let (Ok(a), Ok(b)) = (lo.trim().parse::<u8>(), hi.trim().parse::<u8>()) {
                 for v in a..=b {
                     out.push(v);
                 }
@@ -150,7 +164,7 @@ pub fn split_own_by_slot(cfg: &ConfigMap) -> (Vec<OwnedRadio>, Vec<OwnedRadio>) 
             continue;
         }
         let slot: u8 = k.parse().unwrap_or(0);
-        if slot >= 1 && slot <= 4 {
+        if (1..=4).contains(&slot) {
             g2.push(owned_from_cfg(r));
         } else if slot >= 5 {
             g5.push(owned_from_cfg(r));
@@ -169,7 +183,11 @@ pub fn split_neighbors_by_band(
         if b.is_empty() || invalid_bssid.contains(&b) {
             continue;
         }
-        let r = NeighRow { channel: v.channel, bssid: b.clone(), rssi: v.signal_strength };
+        let r = NeighRow {
+            channel: v.channel,
+            bssid: b.clone(),
+            rssi: v.signal_strength,
+        };
         if v.channel == 0 {
             continue;
         }

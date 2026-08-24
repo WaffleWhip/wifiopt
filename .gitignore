@@ -1,4 +1,19 @@
+# Build artifacts
 /target
 **/*.rs.bk
 Cargo.lock.bak
+
+# Environment variables & secrets
 .env
+.env.*
+!.env.example
+
+# Logs
+/log
+*.log
+
+# Editor & OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

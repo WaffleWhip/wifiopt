@@ -2,10 +2,11 @@ use crate::cluster::MemRow;
 use crate::optimize::OptimizeRow;
 use crate::parse;
 use anyhow::{Context, Result};
-use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use sqlx::Row;
+use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use std::collections::HashMap;
 use std::env;
+use std::fmt::Write;
 
 pub async fn connect() -> Result<MySqlPool> {
     let host = env::var("MYSQL_HOST").context("MYSQL_HOST missing")?;
@@ -17,11 +18,12 @@ pub async fn connect() -> Result<MySqlPool> {
     let pass = env::var("MYSQL_PASSWORD").context("MYSQL_PASSWORD missing")?;
     let db = env::var("MYSQL_DATABASE").unwrap_or_else(|_| "wifi_optimization".to_string());
     let url = format!("mysql://{user}:{pass}@{host}:{port}/{db}");
-    Ok(MySqlPoolOptions::new()
-        .max_connections(2)
+    MySqlPoolOptions::new()
+        .max_connections(32)
+        .min_connections(4)
         .connect(&url)
         .await
-        .context("connect MySQL")?)
+        .context("connect MySQL")
 }
 
 pub async fn list_regions(date: &str, pool: &MySqlPool) -> Result<Vec<u8>> {
@@ -32,15 +34,14 @@ pub async fn list_regions(date: &str, pool: &MySqlPool) -> Result<Vec<u8>> {
     for r in rows {
         let bytes: Vec<u8> = r.try_get(0)?;
         let s = String::from_utf8_lossy(&bytes);
-        if let Some(rest) = s.strip_prefix(&prefix) {
-            if let Ok(n) = rest.parse::<u8>() {
-                if !regs.contains(&n) {
-                    regs.push(n);
-                }
-            }
+        if let Some(rest) = s.strip_prefix(&prefix)
+            && let Ok(n) = rest.parse::<u8>()
+            && !regs.contains(&n)
+        {
+            regs.push(n);
         }
     }
-    regs.sort();
+    regs.sort_unstable();
     Ok(regs)
 }
 
@@ -94,7 +95,7 @@ pub fn split_into_band(
         let (own_2g, own_5g) = parse::split_own_by_slot(&cfg_map);
         let (nb_2g, nb_5g) = parse::split_neighbors_by_band(&nei_map, invalid_bssid);
 
-        let (own_2g_ch, own_2g_pc) = if let Some(o) = own_2g.iter().next() {
+        let (own_2g_ch, own_2g_pc) = if let Some(o) = own_2g.first() {
             (
                 o.channel.map(|c| c as i32),
                 o.possible_channel
@@ -105,7 +106,7 @@ pub fn split_into_band(
         } else {
             (None, vec![])
         };
-        let (own_5g_ch, own_5g_pc) = if let Some(o) = own_5g.iter().next() {
+        let (own_5g_ch, own_5g_pc) = if let Some(o) = own_5g.first() {
             (
                 o.channel.map(|c| c as i32),
                 o.possible_channel
@@ -155,7 +156,10 @@ pub async fn fetch_and_parse(
     let raw = fetch_table_raw(table, pool).await?;
     let n = raw.len();
     let (d2, d5) = split_into_band(raw, invalid_bssid);
-    eprintln!("[parse {table}] {n} rows, {:.2}s", t.elapsed().as_secs_f64());
+    eprintln!(
+        "[parse {table}] {n} rows, {:.2}s",
+        t.elapsed().as_secs_f64()
+    );
     Ok((d2, d5))
 }
 
@@ -207,28 +211,33 @@ pub struct JoinedOptimizeRow {
 }
 
 pub fn join_bands(rows_2g: Vec<OptimizeRow>, rows_5g: Vec<OptimizeRow>) -> Vec<JoinedOptimizeRow> {
-    let map_5g: HashMap<String, OptimizeRow> =
-        rows_5g.into_iter().map(|r| (r.sn.clone(), r)).collect();
+    let mut map_5g: HashMap<String, OptimizeRow> = HashMap::with_capacity(rows_5g.len());
+    for r in rows_5g {
+        map_5g.insert(r.sn.clone(), r);
+    }
 
     rows_2g
         .into_iter()
         .map(|r2g| {
-            let r5g = map_5g.get(&r2g.sn);
+            let r5g = map_5g.remove(&r2g.sn);
             JoinedOptimizeRow {
-                reg: r2g.reg.clone(),
-                sn: r2g.sn.clone(),
+                reg: r2g.reg,
+                sn: r2g.sn,
                 clusterid_2g: r2g.clusterid,
                 ch_before_2g: r2g.ch_before,
                 cost_before_2g: r2g.cost_before,
                 ch_after_2g: r2g.ch_after,
                 cost_after_2g: r2g.cost_after,
                 status_2g: r2g.status,
-                clusterid_5g: r5g.and_then(|r| r.clusterid),
-                ch_before_5g: r5g.and_then(|r| r.ch_before),
-                cost_before_5g: r5g.map(|r| r.cost_before).unwrap_or(0.0),
-                ch_after_5g: r5g.map(|r| r.ch_after).unwrap_or(0),
-                cost_after_5g: r5g.map(|r| r.cost_after).unwrap_or(0.0),
-                status_5g: r5g.map(|r| r.status.clone()).unwrap_or_else(|| "STAY".to_string()),
+                clusterid_5g: r5g.as_ref().and_then(|r| r.clusterid),
+                ch_before_5g: r5g.as_ref().and_then(|r| r.ch_before),
+                cost_before_5g: r5g.as_ref().map(|r| r.cost_before).unwrap_or(0.0),
+                ch_after_5g: r5g.as_ref().map(|r| r.ch_after).unwrap_or(0),
+                cost_after_5g: r5g.as_ref().map(|r| r.cost_after).unwrap_or(0.0),
+                status_5g: r5g
+                    .as_ref()
+                    .map(|r| r.status.clone())
+                    .unwrap_or_else(|| "STAY".to_string()),
             }
         })
         .collect()
@@ -241,6 +250,10 @@ pub async fn truncate_table(table: &str, pool: &MySqlPool) -> Result<()> {
     Ok(())
 }
 
+fn escape_sql(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
 pub async fn upload_optimize(
     rows: &[JoinedOptimizeRow],
     table: &str,
@@ -249,58 +262,76 @@ pub async fn upload_optimize(
     if rows.is_empty() {
         return Ok(());
     }
-    let mut tx = pool.begin().await?;
-
-    let batch_size = 500_usize;
+    let batch_size = 3000_usize;
     let mut count = 0usize;
+
     for chunk in rows.chunks(batch_size) {
-        let placeholders = std::iter::repeat("(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-            .take(chunk.len())
-            .collect::<Vec<_>>()
-            .join(",");
-        let multi_sql = format!(
-            "INSERT INTO `{table}` (reg, sn, clusterid_2g, ch_before_2g, cost_before_2g, \
-             ch_after_2g, cost_after_2g, status_2g, clusterid_5g, ch_before_5g, cost_before_5g, \
-             ch_after_5g, cost_after_5g, status_5g) VALUES {placeholders} \
-             ON DUPLICATE KEY UPDATE \
-             clusterid_2g=VALUES(clusterid_2g), \
-             ch_before_2g=VALUES(ch_before_2g), \
-             cost_before_2g=VALUES(cost_before_2g), \
-             ch_after_2g=VALUES(ch_after_2g), \
-             cost_after_2g=VALUES(cost_after_2g), \
-             status_2g=VALUES(status_2g), \
-             clusterid_5g=VALUES(clusterid_5g), \
-             ch_before_5g=VALUES(ch_before_5g), \
-             cost_before_5g=VALUES(cost_before_5g), \
-             ch_after_5g=VALUES(ch_after_5g), \
-             cost_after_5g=VALUES(cost_after_5g), \
-             status_5g=VALUES(status_5g), \
-             updated_at=CURRENT_TIMESTAMP"
+        let mut sql = String::with_capacity(chunk.len() * 120 + 512);
+        sql.push_str("INSERT INTO `");
+        sql.push_str(table);
+        sql.push_str(
+            "` (reg, sn, clusterid_2g, ch_before_2g, cost_before_2g, \
+                     ch_after_2g, cost_after_2g, status_2g, clusterid_5g, ch_before_5g, \
+                     cost_before_5g, ch_after_5g, cost_after_5g, status_5g) VALUES ",
         );
-        let mut q = sqlx::query(&multi_sql);
-        for r in chunk {
-            q = q
-                .bind(&r.reg)
-                .bind(&r.sn)
-                .bind(r.clusterid_2g)
-                .bind(r.ch_before_2g)
-                .bind(r.cost_before_2g)
-                .bind(r.ch_after_2g)
-                .bind(r.cost_after_2g)
-                .bind(&r.status_2g)
-                .bind(r.clusterid_5g)
-                .bind(r.ch_before_5g)
-                .bind(r.cost_before_5g)
-                .bind(r.ch_after_5g)
-                .bind(r.cost_after_5g)
-                .bind(&r.status_5g);
+
+        for (i, r) in chunk.iter().enumerate() {
+            if i > 0 {
+                sql.push(',');
+            }
+            write!(
+                sql,
+                "('{}','{}',{},{},{:.4},{},{:.4},'{}',{},{},{:.4},{},{:.4},'{}')",
+                escape_sql(&r.reg),
+                escape_sql(&r.sn),
+                r.clusterid_2g
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "NULL".to_string()),
+                r.ch_before_2g
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "NULL".to_string()),
+                r.cost_before_2g,
+                r.ch_after_2g,
+                r.cost_after_2g,
+                escape_sql(&r.status_2g),
+                r.clusterid_5g
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "NULL".to_string()),
+                r.ch_before_5g
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "NULL".to_string()),
+                r.cost_before_5g,
+                r.ch_after_5g,
+                r.cost_after_5g,
+                escape_sql(&r.status_5g),
+            )
+            .unwrap();
         }
-        q.execute(&mut *tx).await.context("multi-row insert batch")?;
+
+        sql.push_str(
+            " ON DUPLICATE KEY UPDATE \
+            clusterid_2g=VALUES(clusterid_2g), \
+            ch_before_2g=VALUES(ch_before_2g), \
+            cost_before_2g=VALUES(cost_before_2g), \
+            ch_after_2g=VALUES(ch_after_2g), \
+            cost_after_2g=VALUES(cost_after_2g), \
+            status_2g=VALUES(status_2g), \
+            clusterid_5g=VALUES(clusterid_5g), \
+            ch_before_5g=VALUES(ch_before_5g), \
+            cost_before_5g=VALUES(cost_before_5g), \
+            ch_after_5g=VALUES(ch_after_5g), \
+            cost_after_5g=VALUES(cost_after_5g), \
+            status_5g=VALUES(status_5g), \
+            updated_at=CURRENT_TIMESTAMP",
+        );
+
+        sqlx::query(&sql)
+            .execute(pool)
+            .await
+            .context("batch insert execute")?;
         count += chunk.len();
-        eprintln!("[upload] batch {} rows (cumulative {count})", chunk.len());
     }
 
-    tx.commit().await?;
     eprintln!("[upload] committed {count} rows to {table}");
     Ok(())
 }

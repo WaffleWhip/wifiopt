@@ -17,7 +17,7 @@ RUN cargo build --release
 
 FROM debian:trixie-slim AS runtime
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata cron \
     && rm -rf /var/lib/apt/lists/*
 
 ENV TZ=Asia/Jakarta
