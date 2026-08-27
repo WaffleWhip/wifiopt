@@ -25,9 +25,9 @@ impl OverlapTable {
     fn for_band(band: &str) -> Self {
         let mut table = Box::new([[0.0_f64; 170]; 170]);
         let (cands, nbs): (Vec<i32>, Vec<i32>) = if band == "2g" {
-            (CANDIDATES_2G.to_vec(), (1..=14).collect())
+            ((1..=14).collect(), (1..=14).collect())
         } else {
-            (CANDIDATES_5G.to_vec(), CANDIDATES_5G.to_vec())
+            ((36..=165).collect(), (36..=165).collect())
         };
         let cand_bw = if band == "2g" { 20 } else { 80 };
         let nb_bw = 20;
@@ -95,9 +95,6 @@ pub fn possible_channels_for(ap: &MemRow, band: &str) -> Vec<i32> {
     } else {
         CANDIDATES_5G
     };
-    if band == "2g" {
-        return base.to_vec();
-    }
     let base_set: HashSet<i32> = base.iter().copied().collect();
     let mut set: HashSet<i32> = HashSet::new();
     for &c in &ap.possible_channels {
@@ -110,12 +107,16 @@ pub fn possible_channels_for(ap: &MemRow, band: &str) -> Vec<i32> {
     {
         set.insert(ch);
     }
+    if band == "5g" {
+        set.retain(|c| !DFS_CHANNELS_5G.contains(c));
+    }
     if set.is_empty() {
         for &c in base {
-            set.insert(c);
+            if band != "5g" || !DFS_CHANNELS_5G.contains(&c) {
+                set.insert(c);
+            }
         }
     }
-    set.retain(|c| !DFS_CHANNELS_5G.contains(c));
     let mut v: Vec<i32> = set.into_iter().collect();
     v.sort_unstable();
     v
@@ -245,8 +246,9 @@ pub fn optimize_band_cluster_aware(
                     best_ch = cand;
                 }
             }
+            let is_invalid_cur = !ap.possible.contains(&cur_ch);
             let saving = cost_at_cur - best_c;
-            if saving > 0.0005 {
+            if is_invalid_cur || saving > 0.0005 {
                 if best_ch != cur_ch {
                     changed = true;
                 }

@@ -204,10 +204,10 @@ pub struct JoinedOptimizeRow {
     pub status_2g: String,
     pub clusterid_5g: Option<i64>,
     pub ch_before_5g: Option<i32>,
-    pub cost_before_5g: f64,
-    pub ch_after_5g: i32,
-    pub cost_after_5g: f64,
-    pub status_5g: String,
+    pub cost_before_5g: Option<f64>,
+    pub ch_after_5g: Option<i32>,
+    pub cost_after_5g: Option<f64>,
+    pub status_5g: Option<String>,
 }
 
 pub fn join_bands(rows_2g: Vec<OptimizeRow>, rows_5g: Vec<OptimizeRow>) -> Vec<JoinedOptimizeRow> {
@@ -231,13 +231,10 @@ pub fn join_bands(rows_2g: Vec<OptimizeRow>, rows_5g: Vec<OptimizeRow>) -> Vec<J
                 status_2g: r2g.status,
                 clusterid_5g: r5g.as_ref().and_then(|r| r.clusterid),
                 ch_before_5g: r5g.as_ref().and_then(|r| r.ch_before),
-                cost_before_5g: r5g.as_ref().map(|r| r.cost_before).unwrap_or(0.0),
-                ch_after_5g: r5g.as_ref().map(|r| r.ch_after).unwrap_or(0),
-                cost_after_5g: r5g.as_ref().map(|r| r.cost_after).unwrap_or(0.0),
-                status_5g: r5g
-                    .as_ref()
-                    .map(|r| r.status.clone())
-                    .unwrap_or_else(|| "STAY".to_string()),
+                cost_before_5g: r5g.as_ref().map(|r| r.cost_before),
+                ch_after_5g: r5g.as_ref().map(|r| r.ch_after),
+                cost_after_5g: r5g.as_ref().map(|r| r.cost_after),
+                status_5g: r5g.as_ref().map(|r| r.status.clone()),
             }
         })
         .collect()
@@ -281,7 +278,7 @@ pub async fn upload_optimize(
             }
             write!(
                 sql,
-                "('{}','{}',{},{},{:.4},{},{:.4},'{}',{},{},{:.4},{},{:.4},'{}')",
+                "('{}','{}',{},{},{:.4},{},{:.4},'{}',{},{},{},{},{},{})",
                 escape_sql(&r.reg),
                 escape_sql(&r.sn),
                 r.clusterid_2g
@@ -300,10 +297,19 @@ pub async fn upload_optimize(
                 r.ch_before_5g
                     .map(|v| v.to_string())
                     .unwrap_or_else(|| "NULL".to_string()),
-                r.cost_before_5g,
-                r.ch_after_5g,
-                r.cost_after_5g,
-                escape_sql(&r.status_5g),
+                r.cost_before_5g
+                    .map(|v| format!("{v:.4}"))
+                    .unwrap_or_else(|| "NULL".to_string()),
+                r.ch_after_5g
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "NULL".to_string()),
+                r.cost_after_5g
+                    .map(|v| format!("{v:.4}"))
+                    .unwrap_or_else(|| "NULL".to_string()),
+                r.status_5g
+                    .as_deref()
+                    .map(|s| format!("'{}'", escape_sql(s)))
+                    .unwrap_or_else(|| "NULL".to_string()),
             )
             .unwrap();
         }
