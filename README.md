@@ -85,7 +85,7 @@ $$\text{Cost} = \sum \text{Overlap} \times \text{OwnerFactor} \times \text{TypeF
   },
   "cron": {
     "timezone": "Asia/Jakarta",
-    "hour": 16,
+    "hour": 19,
     "minute": 30,
     "date": 0
   }
@@ -108,8 +108,10 @@ cargo run --release -- --date 20260817
 cargo run --release -- --date 20260817 --reg 1
 ```
 
+All fields in `config.json` are required — missing or empty config aborts execution (no built-in defaults).
+
 ### Docker (App + Background Scheduler)
-The container packages the Rust binary (`/usr/local/bin/wifiopt`) and background scheduler (`/entrypoint.sh`). It runs in the background and executes `wifiopt` daily according to the schedule in `config.json` (default `16:30 WIB`). Memory is released immediately after each run.
+The container packages the Rust binary (`/usr/local/bin/wifiopt`) and background scheduler (`/entrypoint.sh`). It runs in the background and executes `wifiopt` daily according to the schedule in `config.json` (e.g. `19:30 WIB`). Memory is released immediately after each run.
 
 ```bash
 # Build and run container

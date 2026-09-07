@@ -11,15 +11,24 @@ echo "[$(date)] wifiopt container starting (TZ=${TZ:-Asia/Jakarta})"
 last_run_date=""
 
 while true; do
-    # Read target hour and minute dynamically from config.json
-    target_hour=16
-    target_minute=30
-    if [ -f /app/config.json ]; then
-        cfg_h=$(grep -o '"hour"[[:space:]]*:[[:space:]]*[0-9]*' /app/config.json | grep -o '[0-9]*' | head -n 1)
-        cfg_m=$(grep -o '"minute"[[:space:]]*:[[:space:]]*[0-9]*' /app/config.json | grep -o '[0-9]*' | head -n 1)
-        if [ -n "$cfg_h" ]; then target_hour="$cfg_h"; fi
-        if [ -n "$cfg_m" ]; then target_minute="$cfg_m"; fi
+    # Check config.json exists and is not empty
+    if [ ! -s /app/config.json ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [cron-error] /app/config.json is missing or empty, execution disabled"
+        sleep 30
+        continue
     fi
+
+    cfg_h=$(grep -o '"hour"[[:space:]]*:[[:space:]]*[0-9]*' /app/config.json | grep -o '[0-9]*' | head -n 1)
+    cfg_m=$(grep -o '"minute"[[:space:]]*:[[:space:]]*[0-9]*' /app/config.json | grep -o '[0-9]*' | head -n 1)
+
+    if [ -z "$cfg_h" ] || [ -z "$cfg_m" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [cron-error] config.json missing hour or minute, execution disabled"
+        sleep 30
+        continue
+    fi
+
+    target_hour="$cfg_h"
+    target_minute="$cfg_m"
 
     cur_date=$(date +%Y%m%d)
     cur_h=$(date +%H)

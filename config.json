@@ -7,8 +7,8 @@
   },
   "cron": {
     "timezone": "Asia/Jakarta",
-    "hour": 16,
-    "minute": 30,
+    "hour": 20,
+    "minute": 0,
     "date": 0
   }
 }

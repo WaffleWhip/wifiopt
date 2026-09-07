@@ -14,75 +14,35 @@ use std::time::Instant;
 #[derive(Debug, Deserialize, Clone)]
 struct Config {
     cluster: ClusterCfg,
-    #[serde(default)]
     optimize: OptimizeCfg,
-    #[serde(default)]
     cron: CronCfg,
 }
 
-#[derive(Debug, Default, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 struct ClusterCfg {
     min_size: usize,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 struct OptimizeCfg {
-    #[serde(default = "default_stale_threshold")]
     stale_threshold: usize,
-}
-
-impl Default for OptimizeCfg {
-    fn default() -> Self {
-        Self {
-            stale_threshold: default_stale_threshold(),
-        }
-    }
-}
-
-fn default_stale_threshold() -> usize {
-    50
 }
 
 #[derive(Debug, Deserialize, Clone)]
 struct CronCfg {
-    #[serde(default = "default_timezone")]
     timezone: String,
-    #[serde(default = "default_cron_hour")]
     hour: u8,
-    #[serde(default = "default_cron_minute")]
     minute: u8,
-    #[serde(default = "default_date")]
     date: i64,
-}
-
-impl Default for CronCfg {
-    fn default() -> Self {
-        Self {
-            timezone: default_timezone(),
-            hour: default_cron_hour(),
-            minute: default_cron_minute(),
-            date: default_date(),
-        }
-    }
-}
-
-fn default_timezone() -> String {
-    "Asia/Jakarta".to_string()
-}
-fn default_cron_hour() -> u8 {
-    16
-}
-fn default_cron_minute() -> u8 {
-    30
-}
-fn default_date() -> i64 {
-    0
 }
 
 impl Config {
     fn load(path: impl AsRef<Path>) -> Result<Self> {
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("read config {}", path.as_ref().display()))?;
+        if text.trim().is_empty() {
+            anyhow::bail!("config {} is empty", path.as_ref().display());
+        }
         let cfg: Self = serde_json::from_str(&text).context("parse config.json")?;
         Ok(cfg)
     }
@@ -229,13 +189,9 @@ async fn run_daily(
         ));
         let t_reg = Instant::now();
 
-        let (data_2g, data_5g) = mysql::fetch_and_parse(
-            &table,
-            &pool,
-            &std::collections::HashSet::from(["00:00:00:00:00:00".to_string()]),
-        )
-        .await
-        .with_context(|| format!("parse {table}"))?;
+        let (data_2g, data_5g) = mysql::fetch_and_parse(&table, &pool, &cfg.invalid_bssid_set())
+            .await
+            .with_context(|| format!("parse {table}"))?;
         let n = data_2g.len();
         log.log(&format!("[{reg}] parsed rows: {n}"));
 
