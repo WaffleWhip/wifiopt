@@ -18,7 +18,6 @@ const NAV = [
   { href: "/", label: "Dashboard" },
   { href: "/runs", label: "Runs" },
   { href: "/trends", label: "Trends" },
-  { href: "/compare", label: "Compare" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -30,7 +29,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <span className="text-lg font-semibold">wifiopt</span>
-              <span className="text-sm text-muted-foreground">control</span>
             </div>
             <nav className="flex gap-1">
               {NAV.map((n) => (

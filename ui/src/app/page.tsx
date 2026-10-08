@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import CostChart from "@/components/cost-chart";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import {
   Table,
@@ -83,6 +84,7 @@ async function DashboardData() {
           )}
         </CardContent>
       </Card>
+      <CostChart date={latest} />
     </>
   );
 }

@@ -9,27 +9,12 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
 export default function SettingsPage() {
-  const [cron, setCron] = useState("");
-  const [hour, setHour] = useState("5");
-  const [minute, setMinute] = useState("30");
   const [health, setHealth] = useState<Record<string, unknown> | null>(null);
   const [db, setDb] = useState({ host: "", port: "", user: "", password: "", database: "" });
-
-  async function refresh() {
-    const c = await fetch("/api/cron").then((r) => r.json());
-    setCron(c.line ?? "none");
-    const h = await fetch("/api/health").then((r) => r.json());
-    setHealth(h);
-    const s = await fetch("/api/settings").then((r) => r.json());
-    setDb({ host: s.host ?? "", port: s.port ?? "", user: s.user ?? "", password: "", database: s.database ?? "" });
-  }
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const c = await fetch("/api/cron").then((r) => r.json());
-      if (cancelled) return;
-      setCron(c.line ?? "none");
       const h = await fetch("/api/health").then((r) => r.json());
       if (cancelled) return;
       setHealth(h);
@@ -41,22 +26,6 @@ export default function SettingsPage() {
       cancelled = true;
     };
   }, []);
-
-  async function save() {
-    try {
-      const r = await fetch("/api/cron", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hour: Number(hour), minute: Number(minute) }),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error ?? "save failed");
-      toast.success("cron updated");
-      refresh();
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  }
 
   async function saveDb() {
     try {
@@ -109,27 +78,6 @@ export default function SettingsPage() {
             </Field>
             <Button onClick={saveDb}>Save MySQL</Button>
           </FieldGroup>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Daily cron</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4">
-            <code className="rounded-md bg-muted p-2 text-xs">{cron}</code>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="hour">Hour</FieldLabel>
-                <Input id="hour" value={hour} onChange={(e) => setHour(e.target.value)} />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="minute">Minute</FieldLabel>
-                <Input id="minute" value={minute} onChange={(e) => setMinute(e.target.value)} />
-              </Field>
-              <Button onClick={save}>Save schedule</Button>
-            </FieldGroup>
-          </div>
         </CardContent>
       </Card>
       <Card>

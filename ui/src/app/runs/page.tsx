@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,9 @@ export default function RunsPage() {
   const [activeLog, setActiveLog] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cron, setCron] = useState("");
+  const [hour, setHour] = useState("5");
+  const [minute, setMinute] = useState("30");
 
   async function refreshJobs() {
     const r = await fetch("/api/runs");
@@ -63,11 +67,30 @@ export default function RunsPage() {
       } catch {
         // keep manual entry
       }
+      const c = await fetch("/api/cron").then((r) => r.json());
+      if (cancelled) return;
+      setCron(c.line ?? "none");
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function saveCron() {
+    try {
+      const r = await fetch("/api/cron", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hour: Number(hour), minute: Number(minute) }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "save failed");
+      toast.success("cron updated");
+      setCron(j.line ?? "");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
 
   const availRegs = dates.find((d) => d.date === date)?.regs ?? REGS;
 
@@ -248,28 +271,64 @@ export default function RunsPage() {
           <CardTitle>Output history</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Region</TableHead>
-                <TableHead>Rows</TableHead>
-                <TableHead>Size</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {history.slice(0, 60).map((h) => (
-                <TableRow key={`${h.date}-${h.reg}`}>
-                  <TableCell>{h.date}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{h.reg}</Badge>
-                  </TableCell>
-                  <TableCell>{h.rows?.toLocaleString() ?? "-"}</TableCell>
-                  <TableCell>{(h.bytes / 1024 / 1024).toFixed(1)} MB</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <Accordion type="single" collapsible>
+            {[...new Map(history.map((h) => [h.date, h])).keys()]
+              .slice(0, 30)
+              .map((date) => {
+                const regs = history.filter((h) => h.date === date);
+                const total = regs.reduce((s, h) => s + (h.rows ?? 0), 0);
+                return (
+                  <AccordionItem key={date} value={date}>
+                    <AccordionTrigger>
+                      {date} — {total.toLocaleString()} rows
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Region</TableHead>
+                            <TableHead>Rows</TableHead>
+                            <TableHead>Size</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {regs.map((h) => (
+                            <TableRow key={h.reg}>
+                              <TableCell>
+                                <Badge variant="secondary">{h.reg}</Badge>
+                              </TableCell>
+                              <TableCell>{h.rows?.toLocaleString() ?? "-"}</TableCell>
+                              <TableCell>{(h.bytes / 1024 / 1024).toFixed(1)} MB</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+          </Accordion>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Daily cron</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4">
+            <code className="rounded-md bg-muted p-2 text-xs">{cron}</code>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="hour">Hour</FieldLabel>
+                <Input id="hour" value={hour} onChange={(e) => setHour(e.target.value)} />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="minute">Minute</FieldLabel>
+                <Input id="minute" value={minute} onChange={(e) => setMinute(e.target.value)} />
+              </Field>
+              <Button onClick={saveCron}>Save schedule</Button>
+            </FieldGroup>
+          </div>
         </CardContent>
       </Card>
     </div>
