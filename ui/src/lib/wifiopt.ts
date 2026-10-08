@@ -386,7 +386,19 @@ export async function trends(days: number): Promise<{ ours: DayAgg[]; mysql: Day
           const [rows] = (await conn.query(
             `SELECT COUNT(*) n, AVG(cost_before_2g) cb2, AVG(cost_after_2g) ca2, AVG(cost_before_5g) cb5, AVG(cost_after_5g) ca5, SUM(status_2g='CHANGE') ch2, SUM(status_5g='CHANGE') ch5 FROM wifi_optimize_${d}`,
           )) as unknown as [DayAgg[]];
-          if (rows[0]) out.mysql.push({ ...rows[0], date: d });
+          if (rows[0]) {
+            const r = rows[0] as unknown as Record<string, number | string | null>;
+            out.mysql.push({
+              date: d,
+              n: Number(r.n ?? 0),
+              cb2: Number(r.cb2 ?? 0),
+              ca2: Number(r.ca2 ?? 0),
+              cb5: Number(r.cb5 ?? 0),
+              ca5: Number(r.ca5 ?? 0),
+              ch2: Number(r.ch2 ?? 0),
+              ch5: Number(r.ch5 ?? 0),
+            });
+          }
         }
       } finally {
         await conn.end();
