@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 const NAV = [
   { href: "/", label: "Dashboard" },
   { href: "/runs", label: "Runs" },
-  { href: "/trends", label: "Trends" },
+  { href: "/history", label: "History" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -26,7 +26,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="h-screen flex flex-col overflow-hidden">
         <header className="border-b">
-          <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex w-full flex-col gap-2 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <span className="text-lg font-semibold">wifiopt</span>
             </div>
@@ -43,7 +43,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </nav>
           </div>
         </header>
-        <main className="mx-auto w-full max-w-6xl flex-1 min-h-0 overflow-hidden px-4 py-6">{children}</main>
+        <main className="w-full flex-1 min-h-0 overflow-hidden px-6 py-6">{children}</main>
         <Toaster />
       </body>
     </html>

@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -29,9 +28,6 @@ export default function RunsPage() {
   const [regs, setRegs] = useState<string[]>(REGS);
   const [stale, setStale] = useState("50");
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [history, setHistory] = useState<
-    { date: string; reg: string; rows: number | null; bytes: number; mtime: string }[]
-  >([]);
   const [activeLog, setActiveLog] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -43,7 +39,6 @@ export default function RunsPage() {
     const r = await fetch("/api/runs");
     const j = await r.json();
     setJobs(j.jobs ?? []);
-    setHistory(j.runs ?? []);
   }
 
   useEffect(() => {
@@ -53,7 +48,6 @@ export default function RunsPage() {
       const j = await r.json();
       if (cancelled) return;
       setJobs(j.jobs ?? []);
-      setHistory(j.runs ?? []);
       try {
         const o = await fetch("/api/options");
         const oj = await o.json();
@@ -266,52 +260,6 @@ export default function RunsPage() {
           </CardContent>
         </Card>
       </div>
-      <Card className="flex-1 min-h-0 flex flex-col">
-        <CardHeader>
-          <CardTitle>Output history</CardTitle>
-        </CardHeader>
-        <CardContent className="flex-1 min-h-0">
-          <ScrollArea className="h-full">
-          <Accordion>
-            {[...new Map(history.map((h) => [h.date, h])).keys()]
-              .slice(0, 30)
-              .map((date) => {
-                const regs = history.filter((h) => h.date === date);
-                const total = regs.reduce((s, h) => s + (h.rows ?? 0), 0);
-                return (
-                  <AccordionItem key={date} value={date}>
-                    <AccordionTrigger>
-                      {date} — {total.toLocaleString()} rows
-                    </AccordionTrigger>
-                    <AccordionContent>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Region</TableHead>
-                            <TableHead>Rows</TableHead>
-                            <TableHead>Size</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {regs.map((h) => (
-                            <TableRow key={h.reg}>
-                              <TableCell>
-                                <Badge variant="secondary">{h.reg}</Badge>
-                              </TableCell>
-                              <TableCell>{h.rows?.toLocaleString() ?? "-"}</TableCell>
-                              <TableCell>{(h.bytes / 1024 / 1024).toFixed(1)} MB</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </AccordionContent>
-                  </AccordionItem>
-                );
-              })}
-          </Accordion>
-          </ScrollArea>
-        </CardContent>
-      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Daily cron</CardTitle>

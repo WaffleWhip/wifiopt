@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { CartesianGrid, Legend, Line, LineChart, XAxis, YAxis } from "recharts";
@@ -17,22 +16,14 @@ type Day = {
   ch5: number;
 };
 
-export default function TrendsPage() {
-  const [days, setDays] = useState("14");
+export default function TrendsChart() {
   const [prod, setProd] = useState<Day[]>([]);
   const [ours, setOurs] = useState<Day[]>([]);
-
-  async function load() {
-    const r = await fetch(`/api/trends?days=${days}`);
-    const j = await r.json();
-    setProd(j.mysql ?? []);
-    setOurs(j.ours ?? []);
-  }
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const r = await fetch(`/api/trends?days=14`);
+      const r = await fetch("/api/trends?days=14");
       const j = await r.json();
       if (cancelled) return;
       setProd(j.mysql ?? []);
@@ -47,9 +38,8 @@ export default function TrendsPage() {
     const o = ours.find((x) => x.date === p.date);
     return {
       date: p.date.slice(4),
-      prodAfter2g: Number(p.ca2?.toFixed(3) ?? 0),
-      oursAfter2g: o ? Number(o.ca2.toFixed(3)) : null,
-      prodAfter5g: Number(p.ca5?.toFixed(4) ?? 0),
+      prod: Number(p.ca2?.toFixed(3) ?? 0),
+      ours: o ? Number(o.ca2.toFixed(3)) : null,
     };
   });
 
@@ -57,37 +47,21 @@ export default function TrendsPage() {
     date: p.date.slice(4),
     ch2: p.ch2,
     ch5: p.ch5,
-    n: p.n,
   }));
 
+  if (!cost.length) return null;
+
   return (
-    <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto">
+    <div className="grid gap-4 xl:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle>Day to day</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            {["7", "14", "30"].map((d) => (
-              <Button key={d} variant={days === d ? "default" : "outline"} onClick={() => setDays(d)}>
-                {d}d
-              </Button>
-            ))}
-            <Button variant="secondary" onClick={load}>
-              Reload
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Avg cost after, 2G</CardTitle>
+          <CardTitle>Cost after 2G, daily</CardTitle>
         </CardHeader>
         <CardContent>
           <ChartContainer
             config={{
-              prodAfter2g: { label: "prod", color: "var(--chart-1)" },
-              oursAfter2g: { label: "ours", color: "var(--chart-2)" },
+              prod: { label: "prod", color: "var(--chart-1)" },
+              ours: { label: "ours", color: "var(--chart-2)" },
             }}
           >
             <LineChart data={cost}>
@@ -96,8 +70,8 @@ export default function TrendsPage() {
               <YAxis />
               <ChartTooltip content={<ChartTooltipContent />} />
               <Legend />
-              <Line type="monotone" dataKey="prodAfter2g" stroke="var(--color-prodAfter2g)" dot={false} />
-              <Line type="monotone" dataKey="oursAfter2g" stroke="var(--color-oursAfter2g)" dot={false} />
+              <Line type="monotone" dataKey="prod" stroke="var(--color-prod)" dot={false} />
+              <Line type="monotone" dataKey="ours" stroke="var(--color-ours)" dot={false} />
             </LineChart>
           </ChartContainer>
         </CardContent>
@@ -109,8 +83,8 @@ export default function TrendsPage() {
         <CardContent>
           <ChartContainer
             config={{
-              ch2: { label: "2g change", color: "var(--chart-1)" },
-              ch5: { label: "5g change", color: "var(--chart-2)" },
+              ch2: { label: "2g", color: "var(--chart-1)" },
+              ch5: { label: "5g", color: "var(--chart-2)" },
             }}
           >
             <LineChart data={change}>
