@@ -27,7 +27,7 @@ export default function HistoryPage() {
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto">
-      <Card tone="white" className="flex-1 min-h-0 flex flex-col">
+      <Card tone="grey" className="flex-1 min-h-0 flex flex-col">
         <CardHeader>
           <CardTitle>Output history</CardTitle>
         </CardHeader>

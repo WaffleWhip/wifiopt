@@ -53,7 +53,7 @@ export default function TrendsChart() {
 
   return (
     <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
-      <Card tone="white">
+      <Card tone="grey">
         <CardHeader>
           <CardTitle>Cost after 2G, daily</CardTitle>
         </CardHeader>
@@ -76,7 +76,7 @@ export default function TrendsChart() {
           </ChartContainer>
         </CardContent>
       </Card>
-      <Card tone="white">
+      <Card tone="grey">
         <CardHeader>
           <CardTitle>Changes per day</CardTitle>
         </CardHeader>

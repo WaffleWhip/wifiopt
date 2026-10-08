@@ -4,11 +4,11 @@ import { cn } from "cn"
 function Card({
   className,
   size = "default",
-  tone = "white",
+  tone = "darkgrey",
   ...props
 }: React.ComponentProps<"div"> & {
   size?: "default" | "sm"
-  tone?: "white" | "gray" | "black"
+  tone?: "grey" | "darkgrey" | "black"
 }) {
   return (
     <div
@@ -17,9 +17,9 @@ function Card({
       data-tone={tone}
       className={cn(
         "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl py-(--card-spacing) text-sm [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
-        tone === "white" && "bg-white text-neutral-900",
-        tone === "gray" && "bg-neutral-200 text-neutral-900",
-        tone === "black" && "bg-neutral-900 text-white",
+        tone === "grey" && "bg-neutral-600 text-white",
+        tone === "darkgrey" && "bg-neutral-800 text-white",
+        tone === "black" && "bg-black text-white",
         className
       )}
       {...props}

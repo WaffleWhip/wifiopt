@@ -26,13 +26,13 @@ async function DashboardData() {
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-3 [&>*]:min-w-0">
-        <Card tone="white">
+        <Card tone="grey">
           <CardHeader>
             <CardTitle>Latest date</CardTitle>
           </CardHeader>
           <CardContent><p className="text-2xl font-semibold">{latest}</p></CardContent>
         </Card>
-        <Card tone="gray">
+        <Card tone="darkgrey">
           <CardHeader>
             <CardTitle>Total rows</CardTitle>
           </CardHeader>
@@ -45,7 +45,7 @@ async function DashboardData() {
           <CardContent><p className="text-2xl font-semibold">{jobs.length}</p></CardContent>
         </Card>
       </div>
-      <Card tone="white">
+      <Card tone="grey">
         <CardHeader>
           <CardTitle>Latest run per region</CardTitle>
         </CardHeader>

@@ -52,7 +52,7 @@ export default function SettingsPage() {
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto">
-      <Card tone="white">
+      <Card tone="grey">
         <CardHeader>
           <CardTitle>MySQL pointing</CardTitle>
         </CardHeader>
@@ -87,7 +87,7 @@ export default function SettingsPage() {
           </FieldGroup>
         </CardContent>
       </Card>
-      <Card tone="gray">
+      <Card tone="darkgrey">
         <CardHeader>
           <CardTitle>Health</CardTitle>
         </CardHeader>
