@@ -1,97 +1,243 @@
-use crate::discover::ApInfo;
+use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Band {
-    G2,
-    G5,
+use crate::discover::INVALID_BSSID;
+use crate::graph::MemRow;
+
+pub const CANDIDATES_2G: &[i32] = &[1, 6, 11];
+pub const CANDIDATES_5G: &[i32] = &[
+    36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 149,
+    153, 157, 161, 165,
+];
+pub const DFS_5G: &[i32] = &[
+    52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140,
+];
+
+pub const OWN_GATEWAY: f64 = 0.50;
+pub const EXTERNAL: f64 = 1.00;
+pub const CO_FACTOR: f64 = 1.00;
+pub const ADJ_FACTOR: f64 = 1.20;
+
+pub fn band_cost_ok(ch: i32, band: &str) -> bool {
+    if band == "2g" {
+        (1..=14).contains(&ch)
+    } else {
+        ch >= 32 && !DFS_5G.contains(&ch)
+    }
+}
+
+fn overlap(cand_ch: i32, cand_bw: i32, nb_ch: i32, nb_bw: i32, band: &str) -> f64 {
+    let cf = if band == "2g" {
+        |c: i32| 2407 + 5 * c
+    } else {
+        |c: i32| 5000 + 5 * c
+    };
+    let dist = (cf(cand_ch) - cf(nb_ch)).abs();
+    (std::cmp::max(0, cand_bw / 2 + nb_bw / 2 - dist) as f64 / cand_bw as f64).min(1.0)
+}
+
+pub fn overlap_2g(a: i32, b: i32) -> f64 {
+    overlap(a, 20, b, 20, "2g")
+}
+
+pub fn overlap_5g(a: i32, b: i32) -> f64 {
+    overlap(a, 80, b, 20, "5g")
+}
+
+pub fn rssi_factor(rssi: i32) -> f64 {
+    if rssi >= -50 {
+        1.00
+    } else if rssi >= -60 {
+        0.80
+    } else if rssi >= -70 {
+        0.60
+    } else if rssi >= -80 {
+        0.30
+    } else {
+        0.10
+    }
+}
+
+pub fn round3(v: f64) -> f64 {
+    (v * 1000.0).round() / 1000.0
+}
+
+pub fn possible_channels(ap: &MemRow, band: &str) -> Vec<i32> {
+    let base = if band == "2g" {
+        CANDIDATES_2G
+    } else {
+        CANDIDATES_5G
+    };
+    let base_set: HashSet<i32> = base.iter().copied().collect();
+    let mut set: HashSet<i32> = HashSet::new();
+    for &c in &ap.possible_channels {
+        if base_set.contains(&c) {
+            set.insert(c);
+        }
+    }
+    if let Some(ch) = ap.own_channel {
+        if base_set.contains(&ch) {
+            set.insert(ch);
+        }
+    }
+    if band == "5g" {
+        set.retain(|c| !DFS_5G.contains(c));
+    }
+    if set.is_empty() {
+        for &c in base {
+            if band != "5g" || !DFS_5G.contains(&c) {
+                set.insert(c);
+            }
+        }
+    }
+    let mut v: Vec<i32> = set.into_iter().collect();
+    v.sort_unstable();
+    v
 }
 
 #[derive(Debug, Clone)]
-pub struct Assignment {
-    pub serial: String,
-    pub before: Option<u8>,
-    pub after: Option<u8>,
-    pub cost_before: Option<f64>,
-    pub cost_after: Option<f64>,
+pub struct OptimizeRow {
+    pub sn: String,
+    pub clusterid: Option<i64>,
+    pub ch_before: Option<i32>,
+    pub cost_before: f64,
+    pub ch_after: i32,
+    pub cost_after: f64,
     pub status: String,
 }
 
-fn overlap(band: Band, a: u8, b: u8) -> f64 {
-    let d = a.abs_diff(b);
-    match band {
-        Band::G5 => {
-            if d == 0 {
-                1.0
-            } else {
-                0.0
+struct ApOpt {
+    sn: String,
+    cluster_id: Option<i64>,
+    neighbors: Vec<(i32, f64)>,
+    possible: Vec<i32>,
+    cur_ch: i32,
+}
+
+fn cost_for(cand: i32, neighbors: &[(i32, f64)], band: &str) -> f64 {
+    let mut total = 0.0;
+    for &(nb_ch, w) in neighbors {
+        let ov = if band == "2g" {
+            overlap_2g(cand, nb_ch)
+        } else {
+            overlap_5g(cand, nb_ch)
+        };
+        if ov <= 0.0 {
+            continue;
+        }
+        total += ov * if nb_ch == cand { CO_FACTOR } else { ADJ_FACTOR } * w;
+    }
+    total
+}
+
+pub fn optimize_band(
+    rows: &[MemRow],
+    cluster_sns: &[Vec<String>],
+    stale_threshold: usize,
+    band: &str,
+) -> Vec<OptimizeRow> {
+    let mut own_set: HashSet<&str> = HashSet::new();
+    for r in rows {
+        for b in &r.own {
+            let s = b.trim();
+            if !s.is_empty() && s != INVALID_BSSID {
+                own_set.insert(s);
             }
         }
-        Band::G2 => match d {
-            0 => 1.0,
-            1 => 0.5,
-            2 => 0.25,
-            _ => 0.0,
-        },
     }
-}
 
-fn rssi_weight(signal: i16, threshold: f32) -> f64 {
-    let w = (signal as f32 - threshold + 5.0) / 30.0;
-    w.clamp(0.05, 1.0) as f64
-}
-
-pub fn score(ap: &ApInfo, channel: u8, band: Band, threshold: f32) -> f64 {
-    let s: f64 = ap
-        .neighbors
-        .iter()
-        .filter(|n| {
-            let is_5g = n.channel > 14;
-            (is_5g == (band == Band::G5)) && n.signal as f32 > threshold
-        })
-        .map(|n| overlap(band, channel, n.channel) * rssi_weight(n.signal, threshold))
-        .sum();
-    if s == 0.0 { 0.0 } else { s }
-}
-
-fn radio(ap: &ApInfo, band: Band) -> Option<(u8, Vec<u8>)> {
-    match band {
-        Band::G2 => ap.band2g.as_ref().map(|r| (r.current, r.possible.clone())),
-        Band::G5 => ap.band5g.as_ref().map(|r| (r.current, r.possible.clone())),
+    let mut cid_of: HashMap<&str, i64> = HashMap::new();
+    for (i, sns) in cluster_sns.iter().enumerate() {
+        for sn in sns {
+            cid_of.insert(sn.as_str(), (i + 1) as i64);
+        }
     }
-}
 
-pub fn assign(cluster: &[ApInfo], band: Band, threshold: f32, stay_delta: f64) -> Vec<Assignment> {
-    cluster
-        .iter()
-        .filter_map(|ap| {
-            let (current, possible) = radio(ap, band)?;
-            if possible.is_empty() {
-                return None;
+    let mut aps: Vec<ApOpt> = Vec::new();
+    for r in rows {
+        if r.own.is_empty() {
+            continue;
+        }
+        let possible = possible_channels(r, band);
+        if possible.is_empty() {
+            continue;
+        }
+        let cur = r.own_channel.unwrap_or(possible[0]);
+        let mut neighbors = Vec::new();
+        for (bssid, ch, rssi) in &r.neighbors {
+            let s = bssid.trim();
+            if s.is_empty() || s == INVALID_BSSID || !band_cost_ok(*ch, band) {
+                continue;
             }
-            let cost_before = score(ap, current, band, threshold);
-            let mut best = current;
-            let mut best_cost = f64::INFINITY;
-            for ch in &possible {
-                let c = score(ap, *ch, band, threshold);
-                if c < best_cost - 1e-9 {
-                    best_cost = c;
-                    best = *ch;
+            neighbors.push((*ch, rssi_factor(*rssi) * if own_set.contains(s) {
+                OWN_GATEWAY
+            } else {
+                EXTERNAL
+            }));
+        }
+        aps.push(ApOpt {
+            cluster_id: cid_of.get(r.sn.as_str()).copied(),
+            sn: r.sn.clone(),
+            neighbors,
+            possible,
+            cur_ch: cur,
+        });
+    }
+
+    aps.sort_unstable_by(|a, b| match (a.cluster_id, b.cluster_id) {
+        (Some(x), Some(y)) if x == y => a.neighbors.len().cmp(&b.neighbors.len()),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (Some(x), Some(y)) => x.cmp(&y),
+        (None, None) => a.neighbors.len().cmp(&b.neighbors.len()),
+    });
+
+    let mut assigned: Vec<i32> = aps.iter().map(|a| a.cur_ch).collect();
+    let mut counter = stale_threshold.max(1);
+    loop {
+        let mut changed = false;
+        for (i, ap) in aps.iter().enumerate() {
+            let cur = assigned[i];
+            let cost_cur = cost_for(cur, &ap.neighbors, band);
+            let mut best_ch = ap.possible[0];
+            let mut best_c = cost_for(best_ch, &ap.neighbors, band);
+            for &cand in ap.possible.iter().skip(1) {
+                let c = cost_for(cand, &ap.neighbors, band);
+                if c < best_c {
+                    best_c = c;
+                    best_ch = cand;
                 }
             }
-            let improvement = cost_before - best_cost;
-            let (after, cost_after, status) = if improvement <= stay_delta {
-                (current, cost_before, "STAY".to_string())
-            } else {
-                (best, best_cost, "CHANGE".to_string())
-            };
-            Some(Assignment {
-                serial: ap.serial.clone(),
-                before: Some(current),
-                after: Some(after),
-                cost_before: Some(cost_before),
-                cost_after: Some(cost_after),
-                status,
-            })
+            if !ap.possible.contains(&cur) || cost_cur - best_c > 0.0005 {
+                if best_ch != cur {
+                    changed = true;
+                }
+                assigned[i] = best_ch;
+            }
+        }
+        if changed {
+            counter = stale_threshold.max(1);
+        } else {
+            counter -= 1;
+        }
+        if counter == 0 || !changed {
+            break;
+        }
+    }
+
+    aps.into_iter()
+        .enumerate()
+        .map(|(i, ap)| {
+            let ca = assigned[i];
+            let cb = ap.cur_ch;
+            OptimizeRow {
+                sn: ap.sn,
+                clusterid: ap.cluster_id,
+                ch_before: Some(cb),
+                cost_before: round3(cost_for(cb, &ap.neighbors, band)),
+                ch_after: ca,
+                cost_after: round3(cost_for(ca, &ap.neighbors, band)),
+                status: if ca == cb { "STAY".into() } else { "CHANGE".into() },
+            }
         })
         .collect()
 }

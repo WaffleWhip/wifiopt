@@ -10,6 +10,7 @@ fn test_opts() -> Options {
             .unwrap_or_else(|_| "mysql://127.0.0.1:3306/wifi_optimization".to_string()),
         rssi_threshold: -85.0,
         stay_delta: 0.05,
+        stale: 50,
     }
 }
 

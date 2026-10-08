@@ -1,15 +1,16 @@
 use anyhow::Result;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use serde_json::Value;
+use std::collections::HashMap;
 
 use crate::db::DiscoverRow;
 
-const DEFAULT_2G: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
-const DEFAULT_5G: &[u8] = &[36, 40, 44, 48, 52, 56, 60, 64, 149, 153, 157, 161];
+pub const INVALID_BSSID: &str = "00:00:00:00:00:00";
 
 #[derive(Debug, Clone)]
-pub struct RadioInfo {
-    pub current: u8,
+pub struct OwnedRadio {
+    pub channel: Option<u8>,
+    pub bssid: String,
     pub possible: Vec<u8>,
 }
 
@@ -17,141 +18,186 @@ pub struct RadioInfo {
 pub struct Neighbor {
     pub bssid: String,
     pub channel: u8,
-    pub signal: i16,
+    pub signal: i32,
 }
 
 #[derive(Debug, Clone)]
 pub struct ApInfo {
     pub serial: String,
-    pub band2g: Option<RadioInfo>,
-    pub band5g: Option<RadioInfo>,
-    pub neighbors: Vec<Neighbor>,
+    pub radios_2g: Vec<OwnedRadio>,
+    pub radios_5g: Vec<OwnedRadio>,
+    pub neighbors_2g: Vec<Neighbor>,
+    pub neighbors_5g: Vec<Neighbor>,
 }
 
 #[derive(Debug, Deserialize)]
-struct CfgEntry {
+struct RadioConfig {
+    ssid_enable: bool,
     #[serde(default)]
-    channel: Option<serde_json::Value>,
+    bssid: String,
     #[serde(default)]
-    possible_channel: Option<serde_json::Value>,
+    channel: Value,
+    #[serde(default)]
+    possible_channel: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct NbEntry {
-    #[serde(default)]
-    bssid: Option<String>,
-    #[serde(default)]
-    channel: Option<serde_json::Value>,
-    #[serde(default)]
-    signal_strength: Option<serde_json::Value>,
+struct NbRaw {
+    #[serde(deserialize_with = "de_bssid")]
+    bssid: String,
+    #[serde(deserialize_with = "de_u8")]
+    channel: u8,
+    #[serde(rename = "signal_strength", deserialize_with = "de_i32")]
+    signal: i32,
 }
 
-fn to_u8(v: &serde_json::Value) -> Option<u8> {
+fn de_bssid<'de, D>(d: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = Value::deserialize(d)?;
     match v {
-        serde_json::Value::Number(n) => n.as_u64().and_then(|x| u8::try_from(x).ok()),
-        serde_json::Value::String(s) => s.trim().parse::<u8>().ok(),
+        Value::String(s) => Ok(s),
+        Value::Null => Ok(String::new()),
+        other => Ok(other.to_string()),
+    }
+}
+
+fn de_u8<'de, D>(d: D) -> Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = Value::deserialize(d)?;
+    match v {
+        Value::Number(n) => n
+            .as_u64()
+            .and_then(|x| u8::try_from(x).ok())
+            .ok_or_else(|| serde::de::Error::custom("out of range")),
+        Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                Ok(0)
+            } else {
+                t.parse::<u8>().map_err(serde::de::Error::custom)
+            }
+        }
+        Value::Null => Ok(0),
+        _ => Err(serde::de::Error::custom("expected number or string")),
+    }
+}
+
+fn de_i32<'de, D>(d: D) -> Result<i32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = Value::deserialize(d)?;
+    match v {
+        Value::Number(n) => n
+            .as_i64()
+            .and_then(|x| i32::try_from(x).ok())
+            .ok_or_else(|| serde::de::Error::custom("out of range")),
+        Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                Ok(0)
+            } else {
+                t.parse::<i32>().map_err(serde::de::Error::custom)
+            }
+        }
+        Value::Null => Ok(0),
+        _ => Err(serde::de::Error::custom("expected number or string")),
+    }
+}
+
+pub fn channel_to_u8(v: &Value) -> Option<u8> {
+    match v {
+        Value::Number(n) => n.as_u64().and_then(|x| u8::try_from(x).ok()),
+        Value::String(s) => s.parse::<u8>().ok(),
         _ => None,
     }
 }
 
-fn to_i16(v: &serde_json::Value) -> Option<i16> {
-    match v {
-        serde_json::Value::Number(n) => n.as_i64().and_then(|x| i16::try_from(x).ok()),
-        serde_json::Value::String(s) => s.trim().parse::<i16>().ok(),
-        _ => None,
-    }
-}
-
-fn parse_possible(raw: &Option<serde_json::Value>, band2g: bool) -> Vec<u8> {
-    let mut out: Vec<u8> = match raw {
-        Some(serde_json::Value::String(s)) => s
-            .split(',')
-            .filter_map(|p| p.trim().parse::<u8>().ok())
-            .collect(),
-        Some(serde_json::Value::Array(a)) => a.iter().filter_map(to_u8).collect(),
-        _ => Vec::new(),
-    }
-    .into_iter()
-    .filter(|c| if band2g { *c >= 1 && *c <= 14 } else { *c >= 32 })
-    .collect();
-    out.sort_unstable();
-    out.dedup();
-    if out.is_empty() {
-        out = if band2g {
-            DEFAULT_2G.to_vec()
-        } else {
-            DEFAULT_5G.to_vec()
-        };
+pub fn parse_possible_ch(s: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    for tok in s.split(',') {
+        let t = tok.trim();
+        if let Some((lo, hi)) = t.split_once('-') {
+            if let (Ok(a), Ok(b)) = (lo.trim().parse::<u8>(), hi.trim().parse::<u8>()) {
+                out.extend(a..=b);
+            }
+        } else if let Ok(v) = t.parse::<u8>() {
+            out.push(v);
+        }
     }
     out
 }
 
+fn parse_map<T>(s: &str) -> HashMap<String, T>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let t = s.trim();
+    if t.is_empty() || t == "{}" || t == "null" {
+        return HashMap::new();
+    }
+    serde_json::from_str::<HashMap<String, T>>(t).unwrap_or_default()
+}
+
 pub fn parse(row: &DiscoverRow) -> Result<ApInfo> {
-    let cfg: BTreeMap<String, CfgEntry> = if row.json_config.trim().is_empty() {
-        BTreeMap::new()
-    } else {
-        serde_json::from_str(&row.json_config)?
-    };
-    let mut band2g: Option<RadioInfo> = None;
-    let mut band5g: Option<RadioInfo> = None;
-    for entry in cfg.values() {
-        let Some(chv) = &entry.channel else { continue };
-        let Some(ch) = to_u8(chv) else { continue };
-        if ch <= 14 && band2g.is_none() {
-            band2g = Some(RadioInfo {
-                current: ch,
-                possible: parse_possible(&entry.possible_channel, true),
-            });
-        } else if ch > 14 && band5g.is_none() {
-            band5g = Some(RadioInfo {
-                current: ch,
-                possible: parse_possible(&entry.possible_channel, false),
-            });
+    let cfg: HashMap<String, RadioConfig> = parse_map(&row.json_config);
+    let nei: HashMap<String, NbRaw> = parse_map(&row.json_neighbor);
+
+    let mut radios_2g = Vec::new();
+    let mut radios_5g = Vec::new();
+    for (k, r) in &cfg {
+        if !r.ssid_enable {
+            continue;
         }
-    }
-    if band2g.is_none() {
-        if let Some(ch) = row.channel_ont {
-            band2g = Some(RadioInfo {
-                current: ch,
-                possible: DEFAULT_2G.to_vec(),
-            });
+        let b = r.bssid.trim().to_lowercase();
+        if b.is_empty() || b == INVALID_BSSID {
+            continue;
         }
-    }
-    if band5g.is_none() {
-        if let Some(ch) = row.channel_ont5g {
-            band5g = Some(RadioInfo {
-                current: ch,
-                possible: DEFAULT_5G.to_vec(),
-            });
+        let radio = OwnedRadio {
+            channel: channel_to_u8(&r.channel),
+            bssid: b,
+            possible: r
+                .possible_channel
+                .as_deref()
+                .map(parse_possible_ch)
+                .unwrap_or_default(),
+        };
+        let slot: u8 = k.parse().unwrap_or(0);
+        if (1..=4).contains(&slot) {
+            radios_2g.push(radio);
+        } else if slot >= 5 {
+            radios_5g.push(radio);
         }
     }
 
-    let mut neighbors = Vec::new();
-    let s = row.json_neighbor.trim();
-    if !s.is_empty() && s != "[]" {
-        if let Ok(map) = serde_json::from_str::<BTreeMap<String, NbEntry>>(s) {
-            for e in map.values() {
-                let (Some(bssid), Some(chv), Some(sgv)) =
-                    (&e.bssid, &e.channel, &e.signal_strength)
-                else {
-                    continue;
-                };
-                let (Some(ch), Some(sig)) = (to_u8(chv), to_i16(sgv)) else {
-                    continue;
-                };
-                neighbors.push(Neighbor {
-                    bssid: bssid.clone(),
-                    channel: ch,
-                    signal: sig,
-                });
-            }
+    let mut neighbors_2g = Vec::new();
+    let mut neighbors_5g = Vec::new();
+    for v in nei.values() {
+        let b = v.bssid.trim().to_lowercase();
+        if b.is_empty() || b == INVALID_BSSID || v.channel == 0 {
+            continue;
+        }
+        let nb = Neighbor {
+            bssid: b,
+            channel: v.channel,
+            signal: v.signal,
+        };
+        if v.channel <= 13 {
+            neighbors_2g.push(nb);
+        } else {
+            neighbors_5g.push(nb);
         }
     }
 
     Ok(ApInfo {
         serial: row.serial.clone(),
-        band2g,
-        band5g,
-        neighbors,
+        radios_2g,
+        radios_5g,
+        neighbors_2g,
+        neighbors_5g,
     })
 }

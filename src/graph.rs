@@ -1,102 +1,134 @@
-use std::collections::HashMap;
+use anyhow::Result;
+use std::collections::{HashMap, HashSet};
 
-use crate::discover::ApInfo;
+use crate::discover::{ApInfo, INVALID_BSSID};
+
+#[derive(Debug, Clone)]
+pub struct MemRow {
+    pub sn: String,
+    pub own: Vec<String>,
+    pub neighbors: Vec<(String, i32, i32)>,
+    pub own_channel: Option<i32>,
+    pub possible_channels: Vec<i32>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Clusters {
-    pub g2: Vec<Vec<usize>>,
-    pub g5: Vec<Vec<usize>>,
+    pub valid: Vec<Vec<String>>,
 }
 
-struct Union {
-    parent: Vec<usize>,
+struct Dsu {
+    p: Vec<u32>,
 }
 
-impl Union {
+impl Dsu {
     fn new(n: usize) -> Self {
         Self {
-            parent: (0..n).collect(),
+            p: (0..n as u32).collect(),
         }
     }
-    fn find(&mut self, x: usize) -> usize {
-        if self.parent[x] != x {
-            let r = self.find(self.parent[x]);
-            self.parent[x] = r;
+    fn find(&mut self, mut x: u32) -> u32 {
+        while self.p[x as usize] != x {
+            let p = self.p[x as usize];
+            self.p[x as usize] = self.p[p as usize];
+            x = p;
         }
-        self.parent[x]
+        x
     }
-    fn union(&mut self, a: usize, b: usize) {
+    fn union(&mut self, a: u32, b: u32) {
         let ra = self.find(a);
         let rb = self.find(b);
         if ra != rb {
-            self.parent[rb] = ra;
+            self.p[ra as usize] = rb;
         }
     }
 }
 
-fn band_clusters(aps: &[ApInfo], serial_idx: &HashMap<String, usize>, want_5g: bool, threshold: f32) -> Vec<Vec<usize>> {
-    let n = aps.len();
-    let mut u = Union::new(n);
-    for (i, ap) in aps.iter().enumerate() {
-        let has_band = if want_5g {
-            ap.band5g.is_some()
-        } else {
-            ap.band2g.is_some()
-        };
-        if !has_band {
-            continue;
-        }
-        for nbr in &ap.neighbors {
-            if nbr.signal as f32 <= threshold {
-                continue;
-            }
-            let is_5g = nbr.channel > 14;
-            if is_5g != want_5g {
-                continue;
-            }
-            if let Some(&j) = serial_idx.get(&nbr.bssid.to_uppercase()) {
-                if j != i {
-                    u.union(i, j);
-                }
-            }
-        }
+pub fn band_ok(ch: i32, band: &str) -> bool {
+    match band {
+        "2g" => (1..=13).contains(&ch),
+        "5g" => (36..=165).contains(&ch),
+        _ => false,
     }
-    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (i, ap) in aps.iter().enumerate() {
-        let has_band = if want_5g {
-            ap.band5g.is_some()
-        } else {
-            ap.band2g.is_some()
-        };
-        if !has_band {
-            continue;
-        }
-        groups.entry(u.find(i)).or_default().push(i);
-    }
-    let mut out: Vec<Vec<usize>> = groups.into_values().collect();
-    for g in out.iter_mut() {
-        g.sort_by_key(|&i| aps[i].serial.clone());
-    }
-    out.sort_by_key(|g| aps[g[0]].serial.clone());
-    out
 }
 
-pub fn clusters(
-    aps: &[ApInfo],
-    bssid_index: &HashMap<String, String>,
-    threshold: f32,
-) -> Clusters {
-    let serial_idx: HashMap<String, usize> = aps
-        .iter()
-        .enumerate()
-        .map(|(i, a)| (a.serial.clone(), i))
-        .collect();
-    let norm: HashMap<String, usize> = bssid_index
-        .iter()
-        .filter_map(|(b, s)| serial_idx.get(s).map(|&i| (b.to_uppercase(), i)))
-        .collect();
-    Clusters {
-        g2: band_clusters(aps, &norm, false, threshold),
-        g5: band_clusters(aps, &norm, true, threshold),
+fn mem_rows(aps: &[ApInfo], band: &str) -> Vec<MemRow> {
+    aps.iter()
+        .map(|ap| {
+            let (radios, neighbors) = if band == "2g" {
+                (&ap.radios_2g, &ap.neighbors_2g)
+            } else {
+                (&ap.radios_5g, &ap.neighbors_5g)
+            };
+            let first = radios.first();
+            MemRow {
+                sn: ap.serial.clone(),
+                own: radios.iter().map(|r| r.bssid.clone()).collect(),
+                neighbors: neighbors
+                    .iter()
+                    .map(|n| (n.bssid.clone(), n.channel as i32, n.signal))
+                    .collect(),
+                own_channel: first.and_then(|r| r.channel.map(|c| c as i32)),
+                possible_channels: first
+                    .map(|r| r.possible.iter().map(|&c| c as i32).collect())
+                    .unwrap_or_default(),
+            }
+        })
+        .collect()
+}
+
+pub fn cluster(aps: &[ApInfo], band: &str, min_size: usize) -> Result<Clusters> {
+    let rows = mem_rows(aps, band);
+    let min_size = min_size.max(1);
+
+    let mut own_set: HashSet<&str> = HashSet::new();
+    for r in &rows {
+        for b in &r.own {
+            let s = b.trim();
+            if !s.is_empty() && s != INVALID_BSSID {
+                own_set.insert(s);
+            }
+        }
     }
+
+    let n = rows.len();
+    let mut id_of: HashMap<&str, u32> = HashMap::new();
+    let mut next = n as u32;
+    for &b in &own_set {
+        id_of.insert(b, next);
+        next += 1;
+    }
+
+    let mut dsu = Dsu::new(next as usize);
+    for (i, r) in rows.iter().enumerate() {
+        let u = i as u32;
+        for b in &r.own {
+            if let Some(&id) = id_of.get(b.trim()) {
+                dsu.union(u, id);
+            }
+        }
+        for (b, ch, _) in &r.neighbors {
+            if !band_ok(*ch, band) {
+                continue;
+            }
+            if let Some(&id) = id_of.get(b.trim()) {
+                dsu.union(u, id);
+            }
+        }
+    }
+
+    let mut comps: HashMap<u32, Vec<String>> = HashMap::new();
+    for (i, r) in rows.iter().enumerate() {
+        comps.entry(dsu.find(i as u32)).or_default().push(r.sn.clone());
+    }
+    let mut valid: Vec<Vec<String>> = comps
+        .into_values()
+        .filter(|v| v.len() >= min_size)
+        .collect();
+    valid.sort_by_key(|v| v.len());
+    Ok(Clusters { valid })
+}
+
+pub fn mem_rows_for(aps: &[ApInfo], band: &str) -> Vec<MemRow> {
+    mem_rows(aps, band)
 }

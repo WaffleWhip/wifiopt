@@ -1,51 +1,37 @@
-use std::collections::HashMap;
-use wifiopt::discover::{ApInfo, Neighbor, RadioInfo};
+use wifiopt::db::DiscoverRow;
+use wifiopt::discover;
 use wifiopt::graph;
 
-fn ap(serial: &str, _bssid: &str, nbrs: Vec<Neighbor>) -> ApInfo {
-    ApInfo {
-        serial: serial.to_string(),
-        band2g: Some(RadioInfo {
-            current: 6,
-            possible: vec![1, 6, 11],
-        }),
-        band5g: None,
-        neighbors: nbrs,
-    }
+fn ap(sn: &str, bssid: &str, nbr_bssid: &str) -> wifiopt::discover::ApInfo {
+    discover::parse(&DiscoverRow {
+        serial: sn.to_string(),
+        channel_ont: Some(6),
+        channel_ont5g: None,
+        json_config: format!(
+            "{{\"1\":{{\"ssid_enable\":true,\"channel\":6,\"bssid\":\"{bssid}\",\"possible_channel\":\"1,6,11\"}}}}"
+        ),
+        json_neighbor: format!(
+            "{{\"1\":{{\"ssid\":\"n\",\"bssid\":\"{nbr_bssid}\",\"channel\":\"6\",\"signal_strength\":\"-70\"}}}}"
+        ),
+    })
+    .unwrap()
 }
 
-fn nb(bssid: &str, channel: u8, signal: i16) -> Neighbor {
-    Neighbor {
-        bssid: bssid.to_string(),
-        channel,
-        signal,
-    }
-}
-
-fn chain() -> (Vec<ApInfo>, HashMap<String, String>) {
+#[test]
+fn managed_neighbors_share_cluster() {
     let aps = vec![
-        ap("A", "AA:01", vec![nb("BB:02", 6, -70)]),
-        ap("B", "BB:02", vec![nb("AA:01", 6, -70), nb("CC:03", 6, -70)]),
-        ap("C", "CC:03", vec![nb("BB:02", 6, -70)]),
+        ap("A", "aa:01", "bb:02"),
+        ap("B", "bb:02", "aa:01"),
+        ap("C", "cc:03", "ff:ff:ff:ff:ff:ff"),
     ];
-    let mut m = HashMap::new();
-    m.insert("AA:01".to_string(), "A".to_string());
-    m.insert("BB:02".to_string(), "B".to_string());
-    m.insert("CC:03".to_string(), "C".to_string());
-    (aps, m)
+    let c = graph::cluster(&aps, "2g", 2).unwrap();
+    assert_eq!(c.valid.len(), 1);
+    assert_eq!(c.valid[0].len(), 2);
 }
 
 #[test]
-fn connected_aps_share_cluster() {
-    let (aps, idx) = chain();
-    let c = graph::clusters(&aps, &idx, -85.0);
-    assert_eq!(c.g2.len(), 1);
-    assert_eq!(c.g2[0].len(), 3);
-}
-
-#[test]
-fn weak_signal_splits_cluster() {
-    let (aps, idx) = chain();
-    let c = graph::clusters(&aps, &idx, -60.0);
-    assert_eq!(c.g2.len(), 3);
+fn singletons_filtered_by_min_size() {
+    let aps = vec![ap("A", "aa:01", "ff:ff:ff:ff:ff:ff")];
+    let c = graph::cluster(&aps, "2g", 2).unwrap();
+    assert!(c.valid.is_empty());
 }

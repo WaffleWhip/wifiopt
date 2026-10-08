@@ -1,55 +1,79 @@
-use wifiopt::cost::{assign, Band};
-use wifiopt::discover::{ApInfo, Neighbor, RadioInfo};
+use wifiopt::cost::{
+    band_cost_ok, overlap_2g, overlap_5g, optimize_band, possible_channels, rssi_factor,
+};
+use wifiopt::graph::MemRow;
 
-fn ap2g(serial: &str, current: u8, nbrs: Vec<Neighbor>) -> ApInfo {
-    ApInfo {
-        serial: serial.to_string(),
-        band2g: Some(RadioInfo {
-            current,
-            possible: vec![1, 6, 11],
-        }),
-        band5g: None,
-        neighbors: nbrs,
-    }
-}
-
-fn nb(bssid: &str, channel: u8, signal: i16) -> Neighbor {
-    Neighbor {
-        bssid: bssid.to_string(),
-        channel,
-        signal,
+fn mem(sn: &str, own: Vec<&str>, own_ch: Option<i32>, possible: Vec<i32>, nb: Vec<(&str, i32, i32)>) -> MemRow {
+    MemRow {
+        sn: sn.to_string(),
+        own: own.into_iter().map(|s| s.to_string()).collect(),
+        neighbors: nb
+            .into_iter()
+            .map(|(b, c, r)| (b.to_string(), c, r))
+            .collect(),
+        own_channel: own_ch,
+        possible_channels: possible,
     }
 }
 
 #[test]
-fn picks_minimum_cost_channel() {
-    let cluster = vec![
-        ap2g("A", 6, vec![nb("X", 6, -70)]),
-        ap2g("B", 6, vec![nb("Y", 1, -70)]),
-    ];
-    let a = assign(&cluster, Band::G2, -85.0, 0.05);
-    assert_eq!(a.len(), 2);
-    assert!(a[0].cost_after.unwrap() <= a[0].cost_before.unwrap());
+fn overlap_values_match_spectral_model() {
+    assert_eq!(overlap_2g(6, 6), 1.0);
+    assert_eq!(overlap_2g(6, 7), 0.75);
+    assert_eq!(overlap_2g(6, 8), 0.5);
+    assert_eq!(overlap_2g(1, 6), 0.0);
+    assert_eq!(overlap_5g(149, 149), 0.625);
 }
 
 #[test]
-fn absent_band_yields_no_assignment() {
-    let cluster = vec![ap2g("A", 6, vec![])];
-    let a = assign(&cluster, Band::G5, -85.0, 0.05);
-    assert!(a.is_empty());
+fn rssi_buckets() {
+    assert_eq!(rssi_factor(-45), 1.0);
+    assert_eq!(rssi_factor(-55), 0.8);
+    assert_eq!(rssi_factor(-65), 0.6);
+    assert_eq!(rssi_factor(-75), 0.3);
+    assert_eq!(rssi_factor(-90), 0.1);
 }
 
 #[test]
-fn empty_neighbors_stay() {
-    let cluster = vec![ap2g("A", 6, vec![])];
-    let a = assign(&cluster, Band::G2, -85.0, 0.05);
-    assert_eq!(a[0].status, "STAY");
+fn candidates_restricted_and_dfs_stripped() {
+    let m = mem("A", vec!["aa:01"], Some(6), vec![1, 2, 3, 6, 11], vec![]);
+    assert_eq!(possible_channels(&m, "2g"), vec![1, 6, 11]);
+    let m5 = mem(
+        "A",
+        vec!["aa:05"],
+        Some(149),
+        vec![52, 149, 153],
+        vec![],
+    );
+    assert_eq!(possible_channels(&m5, "5g"), vec![149, 153]);
 }
 
 #[test]
-fn zero_cost_never_negative_zero() {
-    use wifiopt::cost::score;
-    let ap = ap2g("A", 6, vec![]);
-    let s = score(&ap, 6, Band::G2, -85.0);
-    assert_eq!(s.to_bits(), 0.0f64.to_bits());
+fn readme_example_moves_6_to_1() {
+    let m = mem(
+        "485754432288A0B6",
+        vec!["9c:bf:cd:2d:22:84"],
+        Some(6),
+        vec![1, 6, 11],
+        vec![
+            ("ext:01", 6, -53),
+            ("ext:02", 6, -70),
+            ("ext:03", 6, -78),
+            ("ext:04", 7, -66),
+            ("ext:05", 7, -70),
+        ],
+    );
+    let out = optimize_band(&[m], &[], 50, "2g");
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].ch_after, 1);
+    assert_eq!(out[0].status, "CHANGE");
+    assert!(out[0].cost_after < 0.001);
+}
+
+#[test]
+fn band_cost_ok_filters() {
+    assert!(band_cost_ok(6, "2g"));
+    assert!(band_cost_ok(14, "2g"));
+    assert!(band_cost_ok(149, "5g"));
+    assert!(!band_cost_ok(52, "5g"));
 }

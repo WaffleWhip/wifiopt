@@ -9,6 +9,7 @@ pub struct Options {
     pub db_url: String,
     pub rssi_threshold: f32,
     pub stay_delta: f64,
+    pub stale: usize,
 }
 
 #[derive(Parser, Debug)]
@@ -26,6 +27,8 @@ struct Cli {
     rssi_threshold: f32,
     #[arg(long, default_value_t = 0.05)]
     stay_delta: f64,
+    #[arg(long, default_value_t = 50)]
+    stale: usize,
 }
 
 pub fn parse_args() -> Options {
@@ -56,6 +59,7 @@ fn from_cli(cli: Cli) -> Options {
         db_url: cli.db_url,
         rssi_threshold: cli.rssi_threshold,
         stay_delta: cli.stay_delta,
+        stale: cli.stale,
     }
 }
 
