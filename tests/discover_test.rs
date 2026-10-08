@@ -22,6 +22,19 @@ fn parses_config_and_neighbors() {
 }
 
 #[test]
+fn disabled_ssid_empty_channel_does_not_drop_row() {
+    let r = DiscoverRow {
+        serial: "SNX".to_string(),
+        channel_ont: Some(11),
+        channel_ont5g: None,
+        json_config: r#"{"1":{"ssid_enable":true,"channel":11,"possible_channel":"1,2,3,4,5,6,7,8,9,10,11,12,13"},"2":{"ssid_enable":false,"channel":"","ssid_name":"","possible_channel":""}}"#.to_string(),
+        json_neighbor: "[]".to_string(),
+    };
+    let ap = discover::parse(&r).unwrap();
+    assert_eq!(ap.band2g.as_ref().unwrap().current, 11);
+}
+
+#[test]
 fn empty_neighbor_and_missing_possible_falls_back() {
     let mut r = row();
     r.json_neighbor = "[]".to_string();

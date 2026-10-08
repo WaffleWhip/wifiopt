@@ -31,9 +31,9 @@ pub struct ApInfo {
 #[derive(Debug, Deserialize)]
 struct CfgEntry {
     #[serde(default)]
-    channel: Option<u8>,
+    channel: Option<serde_json::Value>,
     #[serde(default)]
-    possible_channel: Option<String>,
+    possible_channel: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,14 +62,18 @@ fn to_i16(v: &serde_json::Value) -> Option<i16> {
     }
 }
 
-fn parse_possible(raw: &Option<String>, band2g: bool) -> Vec<u8> {
-    let mut out: Vec<u8> = raw
-        .as_deref()
-        .unwrap_or("")
-        .split(',')
-        .filter_map(|s| s.trim().parse::<u8>().ok())
-        .filter(|c| if band2g { *c >= 1 && *c <= 14 } else { *c >= 32 })
-        .collect();
+fn parse_possible(raw: &Option<serde_json::Value>, band2g: bool) -> Vec<u8> {
+    let mut out: Vec<u8> = match raw {
+        Some(serde_json::Value::String(s)) => s
+            .split(',')
+            .filter_map(|p| p.trim().parse::<u8>().ok())
+            .collect(),
+        Some(serde_json::Value::Array(a)) => a.iter().filter_map(to_u8).collect(),
+        _ => Vec::new(),
+    }
+    .into_iter()
+    .filter(|c| if band2g { *c >= 1 && *c <= 14 } else { *c >= 32 })
+    .collect();
     out.sort_unstable();
     out.dedup();
     if out.is_empty() {
@@ -91,7 +95,8 @@ pub fn parse(row: &DiscoverRow) -> Result<ApInfo> {
     let mut band2g: Option<RadioInfo> = None;
     let mut band5g: Option<RadioInfo> = None;
     for entry in cfg.values() {
-        let Some(ch) = entry.channel else { continue };
+        let Some(chv) = &entry.channel else { continue };
+        let Some(ch) = to_u8(chv) else { continue };
         if ch <= 14 && band2g.is_none() {
             band2g = Some(RadioInfo {
                 current: ch,
