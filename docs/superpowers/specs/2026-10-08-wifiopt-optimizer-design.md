@@ -48,7 +48,7 @@ Local repository holds Rust source. Remote server `192.168.1.69` builds and runs
 1. Resolve `date` (default today) and region list (default all `reg1..reg7`, flexible subset).
 2. Load `discover_*` rows for the selected date and regions plus the BSSID index.
 3. Build the interference graph, find connected components as clusters.
-4. Compute `cost_before` from `channel_ont` and `channel_ont5Ghz`.
+4. Compute `cost_before` from current channels (`json_config` authoritative, `channel_ont` columns as fallback).
 5. Greedy channel assignment for minimal cost within `possible_channel`.
 6. Compute `cost_after` and `status`.
 7. Write rows to file output and print summary counts.
