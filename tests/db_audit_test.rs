@@ -9,3 +9,18 @@ fn only_select_statements_allowed() {
         );
     }
 }
+
+#[test]
+fn retries_transient_failures() {
+    let mut calls = 0;
+    let r = db::with_retry(|| {
+        calls += 1;
+        if calls < 3 {
+            Err::<u8, _>(anyhow::anyhow!("boom"))
+        } else {
+            Ok(7)
+        }
+    });
+    assert_eq!(r.unwrap(), 7);
+    assert_eq!(calls, 3);
+}
