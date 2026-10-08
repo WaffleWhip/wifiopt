@@ -14,6 +14,11 @@ export const metadata: Metadata = {
   description: "WiFi optimizer control and visualization",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
 const NAV = [
   { href: "/", label: "Dashboard" },
   { href: "/runs", label: "Runs" },
