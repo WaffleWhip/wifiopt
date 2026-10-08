@@ -126,6 +126,7 @@ export default function RunsPage() {
                 <Select
                   value={date}
                   onValueChange={(v) => {
+                    if (!v) return;
                     setDate(v);
                     setRegs(dates.find((d) => d.date === v)?.regs ?? REGS);
                   }}
