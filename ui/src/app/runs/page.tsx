@@ -266,11 +266,12 @@ export default function RunsPage() {
           </CardContent>
         </Card>
       </div>
-      <Card>
+      <Card className="flex-1 min-h-0 flex flex-col">
         <CardHeader>
           <CardTitle>Output history</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 min-h-0">
+          <ScrollArea className="h-full">
           <Accordion>
             {[...new Map(history.map((h) => [h.date, h])).keys()]
               .slice(0, 30)
@@ -308,6 +309,7 @@ export default function RunsPage() {
                 );
               })}
           </Accordion>
+          </ScrollArea>
         </CardContent>
       </Card>
       <Card>
@@ -315,7 +317,7 @@ export default function RunsPage() {
           <CardTitle>Daily cron</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto">
+          <div className="flex flex-col gap-4">
             <code className="rounded-md bg-muted p-2 text-xs">{cron}</code>
             <FieldGroup>
               <Field>
