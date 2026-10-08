@@ -27,6 +27,9 @@ export default function RunsPage() {
   const [regs, setRegs] = useState<string[]>(REGS);
   const [stale, setStale] = useState("50");
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [history, setHistory] = useState<
+    { date: string; reg: string; rows: number | null; bytes: number; mtime: string }[]
+  >([]);
   const [activeLog, setActiveLog] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -35,6 +38,7 @@ export default function RunsPage() {
     const r = await fetch("/api/runs");
     const j = await r.json();
     setJobs(j.jobs ?? []);
+    setHistory(j.runs ?? []);
   }
 
   async function refreshOptions() {
@@ -222,6 +226,36 @@ export default function RunsPage() {
           </CardContent>
         </Card>
       </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Output history</CardTitle>
+          <CardDescription>every CSV on disk, newest first</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Region</TableHead>
+                <TableHead>Rows</TableHead>
+                <TableHead>Size</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {history.slice(0, 60).map((h) => (
+                <TableRow key={`${h.date}-${h.reg}`}>
+                  <TableCell>{h.date}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">{h.reg}</Badge>
+                  </TableCell>
+                  <TableCell>{h.rows?.toLocaleString() ?? "-"}</TableCell>
+                  <TableCell>{(h.bytes / 1024 / 1024).toFixed(1)} MB</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

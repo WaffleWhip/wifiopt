@@ -13,12 +13,17 @@ export default function SettingsPage() {
   const [hour, setHour] = useState("5");
   const [minute, setMinute] = useState("30");
   const [health, setHealth] = useState<Record<string, unknown> | null>(null);
+  const [db, setDb] = useState({ host: "", port: "", user: "", password: "", database: "" });
+  const [hasPassword, setHasPassword] = useState(false);
 
   async function refresh() {
     const c = await fetch("/api/cron").then((r) => r.json());
     setCron(c.line ?? "none");
     const h = await fetch("/api/health").then((r) => r.json());
     setHealth(h);
+    const s = await fetch("/api/settings").then((r) => r.json());
+    setDb({ host: s.host ?? "", port: s.port ?? "", user: s.user ?? "", password: "", database: s.database ?? "" });
+    setHasPassword(Boolean(s.hasPassword));
   }
 
   useEffect(() => {
@@ -43,8 +48,63 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveDb() {
+    try {
+      const r = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(db),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "save failed");
+      toast.success("mysql saved, service restarting...");
+      setTimeout(refresh, 8000);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>MySQL pointing</CardTitle>
+          <CardDescription>
+            no hardcode. empty password keeps existing {hasPassword ? "(set)" : "(unset)"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="dbhost">IP / host</FieldLabel>
+              <Input id="dbhost" value={db.host} onChange={(e) => setDb({ ...db, host: e.target.value })} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="dbport">Port</FieldLabel>
+              <Input id="dbport" value={db.port} onChange={(e) => setDb({ ...db, port: e.target.value })} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="dbuser">User</FieldLabel>
+              <Input id="dbuser" value={db.user} onChange={(e) => setDb({ ...db, user: e.target.value })} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="dbpass">Password</FieldLabel>
+              <Input
+                id="dbpass"
+                type="password"
+                placeholder={hasPassword ? "•••••• (unchanged)" : ""}
+                value={db.password}
+                onChange={(e) => setDb({ ...db, password: e.target.value })}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="dbdb">Database</FieldLabel>
+              <Input id="dbdb" value={db.database} onChange={(e) => setDb({ ...db, database: e.target.value })} />
+            </Field>
+            <Button onClick={saveDb}>Save MySQL</Button>
+          </FieldGroup>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Daily cron</CardTitle>

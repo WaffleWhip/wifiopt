@@ -73,15 +73,55 @@ export type Job = {
 const jobs = new Map<string, Job>();
 
 export function getJob(id: string): Job | undefined {
-  return jobs.get(id);
+  const live = jobs.get(id);
+  if (live) return live;
+  try {
+    return JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ jobFile(id), "utf8")) as Job;
+  } catch {
+    return undefined;
+  }
 }
 
 export function listJobs(): Job[] {
-  return [...jobs.values()].reverse();
+  const out: Job[] = [...jobs.values()];
+  try {
+    if (fs.existsSync(/*turbopackIgnore: true*/ JOBS_DIR)) {
+      for (const f of fs.readdirSync(/*turbopackIgnore: true*/ JOBS_DIR)) {
+        if (!f.endsWith(".json")) continue;
+        try {
+          const j = JSON.parse(
+            fs.readFileSync(/*turbopackIgnore: true*/ path.join(JOBS_DIR, f), "utf8"),
+          ) as Job;
+          if (!out.some((x) => x.id === j.id)) out.push(j);
+        } catch {
+          // skip corrupt
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return out.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
 export function jobLogPath(id: string): string {
   return path.join(/*turbopackIgnore: true*/ JOBS_DIR, `${id}.log`);
+}
+
+export function jobFile(id: string): string {
+  return path.join(/*turbopackIgnore: true*/ JOBS_DIR, `${id}.json`);
+}
+
+function persistJob(job: Job) {
+  try {
+    fs.mkdirSync(/*turbopackIgnore: true*/ JOBS_DIR, { recursive: true });
+    fs.writeFileSync(
+      /*turbopackIgnore: true*/ jobFile(job.id),
+      JSON.stringify(job),
+    );
+  } catch {
+    // history best-effort
+  }
 }
 
 export function startJob(date: string, regs: string[], stale: number): Job {
@@ -100,6 +140,7 @@ export function startJob(date: string, regs: string[], stale: number): Job {
     finishedAt: null,
   };
   jobs.set(id, job);
+  persistJob(job);
   const log = fs.openSync(/*turbopackIgnore: true*/ logPath, "w");
   const args = ["--date", date, "--reg", regs.join(","), "--out", OUT_DIR, "--stale", String(stale)];
   const env = { ...process.env };
@@ -118,11 +159,12 @@ export function startJob(date: string, regs: string[], stale: number): Job {
   });
   child.unref();
   child.on("close", (code) => {
-    fs.closeSync(log);
+    fs.closeSync(/*turbopackIgnore: true*/ log);
     const j = jobs.get(id);
     if (j) {
       j.status = code === 0 ? "done" : "failed";
       j.finishedAt = new Date().toISOString();
+      persistJob(j);
     }
   });
   return job;
@@ -168,6 +210,79 @@ export async function listOptions(): Promise<{ date: string; regs: string[] }[]>
   return [...byDate.entries()]
     .map(([date, regs]) => ({ date, regs: [...regs].sort() }))
     .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+const ENV_PATH = process.env.WIFIPT_ENV ?? path.resolve(process.cwd(), ".env");
+
+export type MysqlSettings = {
+  host: string;
+  port: string;
+  user: string;
+  database: string;
+  hasPassword: boolean;
+};
+
+function parseEnvFile(): Record<string, string> {
+  const out: Record<string, string> = {};
+  try {
+    const text = fs.readFileSync(/*turbopackIgnore: true*/ ENV_PATH, "utf8");
+    for (const line of text.split("\n")) {
+      const m = line.match(/^([A-Z_]+)=(.*)$/);
+      if (m) out[m[1]] = m[2];
+    }
+  } catch {
+    // fall back to process env below
+  }
+  return out;
+}
+
+export function readMysql(): MysqlSettings {
+  const f = parseEnvFile();
+  const get = (k: string) => f[k] ?? process.env[k] ?? "";
+  return {
+    host: get("MYSQL_HOST") || "192.168.41.115",
+    port: get("MYSQL_PORT") || "3306",
+    user: get("MYSQL_USER"),
+    database: get("MYSQL_DATABASE") || "wifi_optimization",
+    hasPassword: Boolean(get("MYSQL_PASSWORD")),
+  };
+}
+
+export function writeMysql(s: {
+  host: string;
+  port: string;
+  user: string;
+  password?: string;
+  database: string;
+}): void {
+  if (!s.host || !s.user || !s.database) throw new Error("host, user, database required");
+  if (!/^\d+$/.test(s.port)) throw new Error("bad port");
+  const cur = parseEnvFile();
+  const next = {
+    ...cur,
+    MYSQL_HOST: s.host.trim(),
+    MYSQL_PORT: s.port.trim(),
+    MYSQL_USER: s.user.trim(),
+    MYSQL_DATABASE: s.database.trim(),
+    ...(s.password ? { MYSQL_PASSWORD: s.password } : {}),
+  };
+  const body =
+    Object.entries(next)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n") + "\n";
+  fs.writeFileSync(/*turbopackIgnore: true*/ ENV_PATH, body, { mode: 0o600 });
+}
+
+export function scheduleRestart(): void {
+  try {
+    const child = spawn("sh", ["-c", "sleep 2 && systemctl restart wifiopt-ui"], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+  } catch {
+    // manual restart needed
+  }
 }
 
 export async function readCrontab(): Promise<string[]> {
