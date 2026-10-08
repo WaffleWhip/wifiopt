@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -120,7 +120,6 @@ export default function RunsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Trigger run</CardTitle>
-          <CardDescription>date defaults to today, all regions default</CardDescription>
         </CardHeader>
         <CardContent>
           <FieldGroup>
@@ -136,7 +135,7 @@ export default function RunsPage() {
                   }}
                 >
                   <SelectTrigger id="date">
-                    <SelectValue placeholder="pick date" />
+                    <SelectValue placeholder="date" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
@@ -229,7 +228,6 @@ export default function RunsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Output history</CardTitle>
-          <CardDescription>every CSV on disk, newest first</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>

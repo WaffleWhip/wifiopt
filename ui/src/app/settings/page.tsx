@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
@@ -14,7 +14,6 @@ export default function SettingsPage() {
   const [minute, setMinute] = useState("30");
   const [health, setHealth] = useState<Record<string, unknown> | null>(null);
   const [db, setDb] = useState({ host: "", port: "", user: "", password: "", database: "" });
-  const [hasPassword, setHasPassword] = useState(false);
 
   async function refresh() {
     const c = await fetch("/api/cron").then((r) => r.json());
@@ -23,7 +22,6 @@ export default function SettingsPage() {
     setHealth(h);
     const s = await fetch("/api/settings").then((r) => r.json());
     setDb({ host: s.host ?? "", port: s.port ?? "", user: s.user ?? "", password: "", database: s.database ?? "" });
-    setHasPassword(Boolean(s.hasPassword));
   }
 
   useEffect(() => {
@@ -69,9 +67,6 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>MySQL pointing</CardTitle>
-          <CardDescription>
-            no hardcode. empty password keeps existing {hasPassword ? "(set)" : "(unset)"}
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <FieldGroup>
@@ -92,7 +87,6 @@ export default function SettingsPage() {
               <Input
                 id="dbpass"
                 type="password"
-                placeholder={hasPassword ? "•••••• (unchanged)" : ""}
                 value={db.password}
                 onChange={(e) => setDb({ ...db, password: e.target.value })}
               />
@@ -108,7 +102,6 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Daily cron</CardTitle>
-          <CardDescription>current wifiopt schedule line</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <code className="rounded-md bg-muted p-2 text-xs">{cron}</code>

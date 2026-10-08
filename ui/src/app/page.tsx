@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -26,21 +26,18 @@ async function DashboardData() {
         <Card>
           <CardHeader>
             <CardTitle>Latest date</CardTitle>
-            <CardDescription>most recent output on disk</CardDescription>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">{latest}</CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>Total rows</CardTitle>
-            <CardDescription>across regions for {latest}</CardDescription>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">{totalRows.toLocaleString()}</CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>Jobs</CardTitle>
-            <CardDescription>optimizer runs this session</CardDescription>
           </CardHeader>
           <CardContent className="text-2xl font-semibold">{jobs.length}</CardContent>
         </Card>
@@ -48,7 +45,6 @@ async function DashboardData() {
       <Card>
         <CardHeader>
           <CardTitle>Latest run per region</CardTitle>
-          <CardDescription>{latest}</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>

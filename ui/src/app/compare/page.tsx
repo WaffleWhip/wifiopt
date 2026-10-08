@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
@@ -49,7 +49,6 @@ export default function ComparePage() {
       <Card>
         <CardHeader>
           <CardTitle>Compare</CardTitle>
-          <CardDescription>ours (CSV) vs wifi_optimize table, cost reduction % per region</CardDescription>
         </CardHeader>
         <CardContent className="flex gap-2">
           <Input value={date} onChange={(e) => setDate(e.target.value)} placeholder="20261007" />
