@@ -41,14 +41,16 @@ fn rssi_weight(signal: i16, threshold: f32) -> f64 {
 }
 
 pub fn score(ap: &ApInfo, channel: u8, band: Band, threshold: f32) -> f64 {
-    ap.neighbors
+    let s: f64 = ap
+        .neighbors
         .iter()
         .filter(|n| {
             let is_5g = n.channel > 14;
             (is_5g == (band == Band::G5)) && n.signal as f32 > threshold
         })
         .map(|n| overlap(band, channel, n.channel) * rssi_weight(n.signal, threshold))
-        .sum()
+        .sum();
+    if s == 0.0 { 0.0 } else { s }
 }
 
 fn radio(ap: &ApInfo, band: Band) -> Option<(u8, Vec<u8>)> {

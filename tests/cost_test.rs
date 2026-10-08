@@ -45,3 +45,11 @@ fn empty_neighbors_stay() {
     let a = assign(&cluster, Band::G2, -85.0, 0.05);
     assert_eq!(a[0].status, "STAY");
 }
+
+#[test]
+fn zero_cost_never_negative_zero() {
+    use wifiopt::cost::score;
+    let ap = ap2g("A", 6, vec![]);
+    let s = score(&ap, 6, Band::G2, -85.0);
+    assert_eq!(s.to_bits(), 0.0f64.to_bits());
+}
