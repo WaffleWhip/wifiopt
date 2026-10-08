@@ -26,6 +26,7 @@ export default function RunsPage() {
   const [stale, setStale] = useState("50");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeLog, setActiveLog] = useState("");
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function refreshJobs() {
@@ -62,8 +63,33 @@ export default function RunsPage() {
   async function viewLog(id: string) {
     const r = await fetch(`/api/jobs/${id}`);
     const j = await r.json();
-    setActiveLog(j.log ?? "");
+    if (!r.ok) {
+      toast.error(j.error ?? "job gone (server restarted?)");
+      return;
+    }
+    setActiveLog(j.log === "" ? "(empty so far, job still loading first region)" : j.log);
+    setActiveId(id);
   }
+
+  useEffect(() => {
+    if (!activeId) return;
+    const t = setInterval(async () => {
+      const r = await fetch(`/api/jobs/${activeId}`);
+      const j = await r.json();
+      if (!r.ok) {
+        clearInterval(t);
+        return;
+      }
+      setActiveLog(j.log === "" ? "(empty so far, job still loading first region)" : j.log);
+      if (j.job.status !== "running") {
+        clearInterval(t);
+        toast(j.job.status === "done" ? "job done" : "job failed");
+        refreshJobs();
+      }
+    }, 5000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
 
   return (
     <div className="flex flex-col gap-4">

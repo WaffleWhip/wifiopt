@@ -71,6 +71,8 @@ pub fn run(opts: &Options) -> Result<Summary> {
     let mut total = 0;
     let mut failed = Vec::new();
     for reg in &opts.regs {
+        println!("start {reg} ...");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
         match db::load_discover(opts, reg) {
             Ok(drows) => {
                 let aps: Vec<ApInfo> = drows
