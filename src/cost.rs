@@ -183,12 +183,8 @@ pub fn optimize_band(
         });
     }
 
-    aps.sort_unstable_by(|a, b| match (a.cluster_id, b.cluster_id) {
-        (Some(x), Some(y)) if x == y => a.neighbors.len().cmp(&b.neighbors.len()),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (Some(x), Some(y)) => x.cmp(&y),
-        (None, None) => a.neighbors.len().cmp(&b.neighbors.len()),
+    aps.sort_by(|a, b| {
+        (a.cluster_id, a.neighbors.len(), &a.sn).cmp(&(b.cluster_id, b.neighbors.len(), &b.sn))
     });
 
     let mut assigned: Vec<i32> = aps.iter().map(|a| a.cur_ch).collect();

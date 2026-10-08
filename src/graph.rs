@@ -125,7 +125,10 @@ pub fn cluster(aps: &[ApInfo], band: &str, min_size: usize) -> Result<Clusters> 
         .into_values()
         .filter(|v| v.len() >= min_size)
         .collect();
-    valid.sort_by_key(|v| v.len());
+    for v in valid.iter_mut() {
+        v.sort();
+    }
+    valid.sort_by(|a, b| (a.len(), &a[0]).cmp(&(b.len(), &b[0])));
     Ok(Clusters { valid })
 }
 

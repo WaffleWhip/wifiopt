@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::db::DiscoverRow;
 
@@ -132,20 +132,20 @@ pub fn parse_possible_ch(s: &str) -> Vec<u8> {
     out
 }
 
-fn parse_map<T>(s: &str) -> HashMap<String, T>
+fn parse_map<T>(s: &str) -> BTreeMap<String, T>
 where
     T: for<'de> Deserialize<'de>,
 {
     let t = s.trim();
     if t.is_empty() || t == "{}" || t == "null" {
-        return HashMap::new();
+        return BTreeMap::new();
     }
-    serde_json::from_str::<HashMap<String, T>>(t).unwrap_or_default()
+    serde_json::from_str::<BTreeMap<String, T>>(t).unwrap_or_default()
 }
 
 pub fn parse(row: &DiscoverRow) -> Result<ApInfo> {
-    let cfg: HashMap<String, RadioConfig> = parse_map(&row.json_config);
-    let nei: HashMap<String, NbRaw> = parse_map(&row.json_neighbor);
+    let cfg: BTreeMap<String, RadioConfig> = parse_map(&row.json_config);
+    let nei: BTreeMap<String, NbRaw> = parse_map(&row.json_neighbor);
 
     let mut radios_2g = Vec::new();
     let mut radios_5g = Vec::new();
