@@ -3,6 +3,7 @@ use mysql::prelude::Queryable;
 use std::collections::HashMap;
 
 use crate::config::Options;
+use crate::discover::{parse, ApInfo};
 
 #[derive(Debug, Clone)]
 pub struct DiscoverRow {
@@ -74,6 +75,38 @@ pub fn load_discover(opts: &Options, reg: &str) -> Result<Vec<DiscoverRow>> {
                 },
             )
             .collect())
+    })
+}
+
+pub fn stream_aps(opts: &Options, reg: &str, mut f: impl FnMut(ApInfo)) -> Result<usize> {
+    let table = check_name(&opts.date, reg)?;
+    let sql = DISCOVER_SQL.replace("{table}", &table);
+    with_retry(|| {
+        let pool = mysql::Pool::new(opts.db_url.as_str()).context("db pool")?;
+        let mut conn = pool.get_conn().context("db conn")?;
+        let mut n = 0;
+        let mut iter = conn.query_iter(&sql)?;
+        for row in iter.by_ref() {
+            let (serial, channel_ont, channel_ont5g, json_config, json_neighbor): (
+                String,
+                Option<u8>,
+                Option<u8>,
+                Option<String>,
+                Option<String>,
+            ) = mysql::from_row(row?);
+            n += 1;
+            let dr = DiscoverRow {
+                serial,
+                channel_ont,
+                channel_ont5g,
+                json_config: json_config.unwrap_or_default(),
+                json_neighbor: json_neighbor.unwrap_or_default(),
+            };
+            if let Ok(ap) = parse(&dr) {
+                f(ap);
+            }
+        }
+        Ok(n)
     })
 }
 

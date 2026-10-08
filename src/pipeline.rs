@@ -1,11 +1,10 @@
 use anyhow::{Context, Result};
-use rayon::prelude::*;
 use std::collections::HashMap;
 
 use crate::config::Options;
 use crate::cost::{self, OptimizeRow};
 use crate::db;
-use crate::discover::{self, ApInfo};
+use crate::discover::ApInfo;
 use crate::graph;
 use crate::output::{self, OutputRow, Summary};
 
@@ -68,13 +67,9 @@ pub fn run(opts: &Options) -> Result<Summary> {
     for reg in &opts.regs {
         println!("start {reg} ...");
         let _ = std::io::Write::flush(&mut std::io::stdout());
-        match db::load_discover(opts, reg) {
-            Ok(drows) => {
-                let aps: Vec<ApInfo> = drows
-                    .par_iter()
-                    .filter_map(|r| discover::parse(r).ok())
-                    .collect();
-                drop(drows);
+        let mut aps: Vec<ApInfo> = Vec::new();
+        match db::stream_aps(opts, reg, |ap| aps.push(ap)) {
+            Ok(_) => {
                 let out = optimize(reg, aps, opts.stale);
                 total += out.len();
                 let path = format!("{}/wifi_optimize_{}_{}.csv", opts.out, opts.date, reg);
