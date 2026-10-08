@@ -139,7 +139,7 @@ export default function RunsPage() {
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto">
-      <Card>
+      <Card tone="white">
         <CardHeader>
           <CardTitle>Trigger run</CardTitle>
         </CardHeader>
@@ -204,7 +204,7 @@ export default function RunsPage() {
         </CardContent>
       </Card>
       <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
-        <Card>
+        <Card tone="white">
           <CardHeader>
             <CardTitle>Jobs</CardTitle>
           </CardHeader>
@@ -247,7 +247,7 @@ export default function RunsPage() {
             )}
           </CardContent>
         </Card>
-        <Card>
+        <Card tone="black">
           <CardHeader>
             <CardTitle>Log tail</CardTitle>
           </CardHeader>
@@ -260,7 +260,7 @@ export default function RunsPage() {
           </CardContent>
         </Card>
       </div>
-      <Card>
+      <Card tone="gray">
         <CardHeader>
           <CardTitle>Daily cron</CardTitle>
         </CardHeader>

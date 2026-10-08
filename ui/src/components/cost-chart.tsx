@@ -35,7 +35,7 @@ export default function CostChart({ date }: { date: string }) {
   if (!rows.length) return null;
 
   return (
-    <Card>
+    <Card tone="white">
       <CardHeader>
         <CardTitle>2G cost before vs after</CardTitle>
       </CardHeader>

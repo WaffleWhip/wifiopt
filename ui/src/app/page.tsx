@@ -26,26 +26,26 @@ async function DashboardData() {
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-3 [&>*]:min-w-0">
-        <Card>
+        <Card tone="white">
           <CardHeader>
             <CardTitle>Latest date</CardTitle>
           </CardHeader>
           <CardContent><p className="text-2xl font-semibold">{latest}</p></CardContent>
         </Card>
-        <Card>
+        <Card tone="gray">
           <CardHeader>
             <CardTitle>Total rows</CardTitle>
           </CardHeader>
           <CardContent><p className="text-2xl font-semibold">{totalRows.toLocaleString()}</p></CardContent>
         </Card>
-        <Card>
+        <Card tone="black">
           <CardHeader>
             <CardTitle>Jobs</CardTitle>
           </CardHeader>
           <CardContent><p className="text-2xl font-semibold">{jobs.length}</p></CardContent>
         </Card>
       </div>
-      <Card>
+      <Card tone="white">
         <CardHeader>
           <CardTitle>Latest run per region</CardTitle>
         </CardHeader>
