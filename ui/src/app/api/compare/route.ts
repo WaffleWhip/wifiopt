@@ -51,7 +51,7 @@ async function aggCsv(file: string): Promise<Agg> {
     }
     if (t5 !== null) a.ca5 += t5;
     if (v[7] === "CHANGE") a.ch2 += 1;
-    if (v[14] === "CHANGE") a.ch5 += 1;
+    if (v[13] === "CHANGE") a.ch5 += 1;
   }
   a.cb2 /= Math.max(c2, 1);
   a.ca2 /= Math.max(c2, 1);
