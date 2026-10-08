@@ -1,8 +1,9 @@
 import fs from "node:fs";
-import { NextResponse } from "next/server";
+import { NextResponse, connection } from "next/server";
 import { BIN, OUT_DIR } from "@/lib/wifiopt";
 
 export async function GET() {
+  await connection();
   const bin = fs.existsSync(BIN);
   const out = fs.existsSync(OUT_DIR);
   let db: string = "unknown";

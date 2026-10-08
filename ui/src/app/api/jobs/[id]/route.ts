@@ -1,8 +1,9 @@
 import fs from "node:fs";
-import { NextResponse } from "next/server";
+import { NextResponse, connection } from "next/server";
 import { getJob, jobLogPath } from "@/lib/wifiopt";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  await connection();
   const { id } = await ctx.params;
   const job = getJob(id);
   if (!job) return NextResponse.json({ error: "no job" }, { status: 404 });

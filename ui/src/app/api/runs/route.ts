@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, connection } from "next/server";
 import { listJobs, listRuns, readSummary, startJob } from "@/lib/wifiopt";
 
 export async function GET() {
+  await connection();
   return NextResponse.json({
     runs: listRuns(),
     summary: readSummary(),
@@ -10,6 +11,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  await connection();
   try {
     const body = await req.json();
     const date: string =

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import { NextResponse } from "next/server";
+import { NextResponse, connection } from "next/server";
 import { OUT_DIR } from "@/lib/wifiopt";
 
 type Agg = {
@@ -83,6 +83,7 @@ async function aggMysql(date: string, reg: string) {
 }
 
 export async function GET(req: Request) {
+  await connection();
   const { searchParams } = new URL(req.url);
   const date = (searchParams.get("date") ?? "").replaceAll(/[^0-9]/g, "");
   if (!/^\d{8}$/.test(date)) {
