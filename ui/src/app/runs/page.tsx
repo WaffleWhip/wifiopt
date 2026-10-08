@@ -203,7 +203,7 @@ export default function RunsPage() {
           </FieldGroup>
         </CardContent>
       </Card>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
         <Card>
           <CardHeader>
             <CardTitle>Jobs</CardTitle>
@@ -216,7 +216,7 @@ export default function RunsPage() {
                 </EmptyHeader>
               </Empty>
             ) : (
-            <Table>
+            <div className="overflow-x-auto"><Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
@@ -243,7 +243,7 @@ export default function RunsPage() {
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </Table></div>
             )}
           </CardContent>
         </Card>

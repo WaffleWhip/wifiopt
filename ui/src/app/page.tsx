@@ -25,7 +25,7 @@ async function DashboardData() {
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3 [&>*]:min-w-0">
         <Card>
           <CardHeader>
             <CardTitle>Latest date</CardTitle>
@@ -58,7 +58,7 @@ async function DashboardData() {
               </EmptyHeader>
             </Empty>
           ) : (
-          <Table>
+          <div className="overflow-x-auto"><Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Region</TableHead>
@@ -81,7 +81,7 @@ async function DashboardData() {
                   </TableRow>
                 ))}
             </TableBody>
-          </Table>
+          </Table></div>
           )}
         </CardContent>
       </Card>

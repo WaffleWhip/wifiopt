@@ -43,7 +43,7 @@ export default function HistoryPage() {
                     {date} — {total.toLocaleString()} rows
                   </AccordionTrigger>
                   <AccordionContent>
-                    <Table>
+                    <div className="overflow-x-auto"><Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Region</TableHead>
@@ -62,7 +62,7 @@ export default function HistoryPage() {
                           </TableRow>
                         ))}
                       </TableBody>
-                    </Table>
+                    </Table></div>
                   </AccordionContent>
                 </AccordionItem>
               );
