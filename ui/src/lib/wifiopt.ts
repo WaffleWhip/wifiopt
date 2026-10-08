@@ -427,7 +427,7 @@ export async function findWifioptCron(): Promise<string | null> {
 
 export async function setWifioptCron(minute: number, hour: number): Promise<string> {
   if (minute < 0 || minute > 59 || hour < 0 || hour > 23) throw new Error("bad time");
-  const line = `${minute} ${hour} * * * ${BIN} --date CURRENT --reg all --out ${OUT_DIR} >> ${OUT_DIR}/cron.log 2>&1`;
+  const line = `${minute} ${hour} * * * /root/wifiopt/run_daily.sh >> /root/wifiopt/out/cron.log 2>&1`;
   const lines = (await readCrontab()).filter(
     (l) => !(l.includes("wifiopt") && !l.trim().startsWith("#")),
   );
