@@ -102,10 +102,19 @@ export function startJob(date: string, regs: string[], stale: number): Job {
   jobs.set(id, job);
   const log = fs.openSync(/*turbopackIgnore: true*/ logPath, "w");
   const args = ["--date", date, "--reg", regs.join(","), "--out", OUT_DIR, "--stale", String(stale)];
+  const env = { ...process.env };
+  if (!env.DATABASE_URL && process.env.MYSQL_USER) {
+    const host = process.env.MYSQL_HOST ?? "192.168.41.115";
+    const port = process.env.MYSQL_PORT ?? "3306";
+    const user = process.env.MYSQL_USER ?? "";
+    const pass = process.env.MYSQL_PASSWORD ?? "";
+    const db = process.env.MYSQL_DATABASE ?? "wifi_optimization";
+    env.DATABASE_URL = `mysql://${user}:${pass}@${host}:${port}/${db}`;
+  }
   const child = spawn(BIN, args, {
     detached: true,
     stdio: ["ignore", log, log],
-    env: process.env,
+    env,
   });
   child.unref();
   child.on("close", (code) => {
