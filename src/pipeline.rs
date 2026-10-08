@@ -8,6 +8,10 @@ use crate::discover::ApInfo;
 use crate::graph;
 use crate::output::{self, OutputRow, Summary};
 
+pub fn ts() -> String {
+    chrono::Local::now().format("%H:%M:%S").to_string()
+}
+
 pub fn optimize(reg: &str, aps: Vec<ApInfo>, stale: usize) -> Vec<OutputRow> {
     let updated_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -65,7 +69,7 @@ pub fn run(opts: &Options) -> Result<Summary> {
     let mut total = 0;
     let mut failed = Vec::new();
     for reg in &opts.regs {
-        println!("start {reg} ...");
+        println!("[{}] start {reg} ...", ts());
         let _ = std::io::Write::flush(&mut std::io::stdout());
         let mut aps: Vec<ApInfo> = Vec::new();
         match db::stream_aps(opts, reg, |ap| aps.push(ap)) {
@@ -74,14 +78,14 @@ pub fn run(opts: &Options) -> Result<Summary> {
                 total += out.len();
                 let path = format!("{}/wifi_optimize_{}_{}.csv", opts.out, opts.date, reg);
                 if let Err(e) = output::write_csv(&path, &out) {
-                    eprintln!("write {reg} failed: {e:#}");
+                    eprintln!("[{}] write {reg} failed: {e:#}", ts());
                     failed.push(reg.clone());
                 } else {
-                    println!("{reg}: {} rows -> {path}", out.len());
+                    println!("[{}] {reg}: {} rows -> {path}", ts(), out.len());
                 }
             }
             Err(e) => {
-                eprintln!("load {reg} failed: {e:#}");
+                eprintln!("[{}] load {reg} failed: {e:#}", ts());
                 failed.push(reg.clone());
             }
         }

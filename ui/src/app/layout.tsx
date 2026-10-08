@@ -28,8 +28,8 @@ const NAV = [
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="h-screen flex flex-col overflow-hidden bg-neutral-100">
+    <html lang="en" className={`${inter.variable} dark h-full antialiased`}>
+      <body className="h-screen flex flex-col overflow-hidden bg-background text-foreground">
         <header className="border-b">
           <div className="flex w-full flex-col gap-2 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
