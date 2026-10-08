@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-type H = { date: string; reg: string; rows: number | null; bytes: number };
+type H = { date: string; reg: string; rows: number | null; bytes: number; mtime: string };
 
 export default function HistoryPage() {
   const [history, setHistory] = useState<H[]>([]);
@@ -49,6 +49,7 @@ export default function HistoryPage() {
                           <TableHead>Region</TableHead>
                           <TableHead>Rows</TableHead>
                           <TableHead>Size</TableHead>
+                          <TableHead>Time</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -59,6 +60,7 @@ export default function HistoryPage() {
                             </TableCell>
                             <TableCell>{h.rows?.toLocaleString() ?? "-"}</TableCell>
                             <TableCell>{(h.bytes / 1024 / 1024).toFixed(1)} MB</TableCell>
+                            <TableCell>{new Date(h.mtime).toLocaleTimeString("en-GB")}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
