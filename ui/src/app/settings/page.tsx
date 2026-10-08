@@ -25,9 +25,21 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    // fetch-on-mount: load cron and health once when page opens
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refresh();
+    let cancelled = false;
+    (async () => {
+      const c = await fetch("/api/cron").then((r) => r.json());
+      if (cancelled) return;
+      setCron(c.line ?? "none");
+      const h = await fetch("/api/health").then((r) => r.json());
+      if (cancelled) return;
+      setHealth(h);
+      const s = await fetch("/api/settings").then((r) => r.json());
+      if (cancelled) return;
+      setDb({ host: s.host ?? "", port: s.port ?? "", user: s.user ?? "", password: "", database: s.database ?? "" });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function save() {
@@ -103,38 +115,42 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle>Daily cron</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <code className="rounded-md bg-muted p-2 text-xs">{cron}</code>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="hour">Hour (0-23 WIB server time)</FieldLabel>
-              <Input id="hour" value={hour} onChange={(e) => setHour(e.target.value)} />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="minute">Minute (0-59)</FieldLabel>
-              <Input id="minute" value={minute} onChange={(e) => setMinute(e.target.value)} />
-            </Field>
-            <Button onClick={save}>Save schedule</Button>
-          </FieldGroup>
+        <CardContent>
+          <div className="flex flex-col gap-4">
+            <code className="rounded-md bg-muted p-2 text-xs">{cron}</code>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="hour">Hour</FieldLabel>
+                <Input id="hour" value={hour} onChange={(e) => setHour(e.target.value)} />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="minute">Minute</FieldLabel>
+                <Input id="minute" value={minute} onChange={(e) => setMinute(e.target.value)} />
+              </Field>
+              <Button onClick={save}>Save schedule</Button>
+            </FieldGroup>
+          </div>
         </CardContent>
       </Card>
       <Card>
         <CardHeader>
           <CardTitle>Health</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            <Badge variant={health?.bin ? "default" : "secondary"}>
-              binary {health?.bin ? "ok" : "missing"}
-            </Badge>
-            <Badge variant={health?.out ? "default" : "secondary"}>
-              out dir {health?.out ? "ok" : "missing"}
-            </Badge>
-            <Badge variant={health?.db === "ok" ? "default" : "secondary"}>
-              db {String(health?.db ?? "?")}
-            </Badge>
+        <CardContent>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <Badge variant={health?.bin ? "default" : "secondary"}>
+                binary {health?.bin ? "ok" : "missing"}
+              </Badge>
+              <Badge variant={health?.out ? "default" : "secondary"}>
+                out dir {health?.out ? "ok" : "missing"}
+              </Badge>
+              <Badge variant={health?.db === "ok" ? "default" : "secondary"}>
+                db {String(health?.db ?? "?")}
+              </Badge>
+            </div>
+            <code className="rounded-md bg-muted p-2 text-xs">{JSON.stringify(health)}</code>
           </div>
-          <code className="rounded-md bg-muted p-2 text-xs">{JSON.stringify(health)}</code>
         </CardContent>
       </Card>
     </div>

@@ -50,9 +50,11 @@ export default function ComparePage() {
         <CardHeader>
           <CardTitle>Compare</CardTitle>
         </CardHeader>
-        <CardContent className="flex gap-2">
-          <Input value={date} onChange={(e) => setDate(e.target.value)} placeholder="20261007" />
-          <Button onClick={load}>Load</Button>
+        <CardContent>
+          <div className="flex gap-2">
+            <Input value={date} onChange={(e) => setDate(e.target.value)} placeholder="20261007" />
+            <Button onClick={load}>Load</Button>
+          </div>
         </CardContent>
       </Card>
       {err && <p className="text-sm text-muted-foreground">{err}</p>}

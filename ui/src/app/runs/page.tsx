@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -41,26 +42,31 @@ export default function RunsPage() {
     setHistory(j.runs ?? []);
   }
 
-  async function refreshOptions() {
-    try {
-      const r = await fetch("/api/options");
-      const j = await r.json();
-      const list = j.dates ?? [];
-      setDates(list);
-      if (list.length && !date) {
-        setDate(list[0].date);
-        setRegs(list[0].regs);
-      }
-    } catch {
-      // keep manual entry
-    }
-  }
-
   useEffect(() => {
-    // fetch-on-mount: load jobs and available dates once when page opens
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refreshJobs();
-    refreshOptions();
+    let cancelled = false;
+    (async () => {
+      const r = await fetch("/api/runs");
+      const j = await r.json();
+      if (cancelled) return;
+      setJobs(j.jobs ?? []);
+      setHistory(j.runs ?? []);
+      try {
+        const o = await fetch("/api/options");
+        const oj = await o.json();
+        if (cancelled) return;
+        const list = oj.dates ?? [];
+        setDates(list);
+        if (list.length) {
+          setDate(list[0].date);
+          setRegs(list[0].regs);
+        }
+      } catch {
+        // keep manual entry
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const availRegs = dates.find((d) => d.date === date)?.regs ?? REGS;
@@ -112,7 +118,6 @@ export default function RunsPage() {
       }
     }, 5000);
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
   return (
@@ -158,17 +163,18 @@ export default function RunsPage() {
             </Field>
             <Field>
               <FieldLabel>Regions</FieldLabel>
-              <ToggleGroup
-                value={regs}
-                onValueChange={(v) => v.length && setRegs(v as string[])}
-                className="flex flex-wrap gap-2"
-              >
-                {availRegs.map((r) => (
-                  <ToggleGroupItem key={r} value={r} aria-label={r}>
-                    {r}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
+              <div className="flex flex-wrap gap-2">
+                <ToggleGroup
+                  value={regs}
+                  onValueChange={(v) => v.length && setRegs(v as string[])}
+                >
+                  {availRegs.map((r) => (
+                    <ToggleGroupItem key={r} value={r} aria-label={r}>
+                      {r}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </div>
             </Field>
             <Field>
               <FieldLabel htmlFor="stale">Stale threshold</FieldLabel>
@@ -186,6 +192,13 @@ export default function RunsPage() {
             <CardTitle>Jobs</CardTitle>
           </CardHeader>
           <CardContent>
+            {jobs.length === 0 ? (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyTitle>No jobs yet</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
+            ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -197,7 +210,9 @@ export default function RunsPage() {
               <TableBody>
                 {jobs.map((j) => (
                   <TableRow key={j.id}>
-                    <TableCell className="truncate">{j.id}</TableCell>
+                    <TableCell>
+                      <span className="truncate">{j.id}</span>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={j.status === "done" ? "default" : "secondary"}>
                         {j.status}
@@ -212,6 +227,7 @@ export default function RunsPage() {
                 ))}
               </TableBody>
             </Table>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -219,9 +235,11 @@ export default function RunsPage() {
             <CardTitle>Log tail</CardTitle>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-64 rounded-md border p-2">
-              <pre className="text-xs">{activeLog || "no log selected"}</pre>
-            </ScrollArea>
+            <div className="h-64 rounded-md border p-2">
+              <ScrollArea className="h-full">
+                <pre className="text-xs">{activeLog || "no log selected"}</pre>
+              </ScrollArea>
+            </div>
           </CardContent>
         </Card>
       </div>

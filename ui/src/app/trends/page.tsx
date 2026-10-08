@@ -30,8 +30,17 @@ export default function TrendsPage() {
   }
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    let cancelled = false;
+    (async () => {
+      const r = await fetch(`/api/trends?days=14`);
+      const j = await r.json();
+      if (cancelled) return;
+      setProd(j.mysql ?? []);
+      setOurs(j.ours ?? []);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const cost = prod.map((p) => {
@@ -57,15 +66,17 @@ export default function TrendsPage() {
         <CardHeader>
           <CardTitle>Day to day</CardTitle>
         </CardHeader>
-        <CardContent className="flex gap-2">
-          {["7", "14", "30"].map((d) => (
-            <Button key={d} variant={days === d ? "default" : "outline"} onClick={() => setDays(d)}>
-              {d}d
+        <CardContent>
+          <div className="flex gap-2">
+            {["7", "14", "30"].map((d) => (
+              <Button key={d} variant={days === d ? "default" : "outline"} onClick={() => setDays(d)}>
+                {d}d
+              </Button>
+            ))}
+            <Button variant="secondary" onClick={load}>
+              Reload
             </Button>
-          ))}
-          <Button variant="secondary" onClick={load}>
-            Reload
-          </Button>
+          </div>
         </CardContent>
       </Card>
       <Card>

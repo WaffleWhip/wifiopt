@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import {
   Table,
   TableBody,
@@ -27,19 +28,19 @@ async function DashboardData() {
           <CardHeader>
             <CardTitle>Latest date</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">{latest}</CardContent>
+          <CardContent><p className="text-2xl font-semibold">{latest}</p></CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>Total rows</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">{totalRows.toLocaleString()}</CardContent>
+          <CardContent><p className="text-2xl font-semibold">{totalRows.toLocaleString()}</p></CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>Jobs</CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">{jobs.length}</CardContent>
+          <CardContent><p className="text-2xl font-semibold">{jobs.length}</p></CardContent>
         </Card>
       </div>
       <Card>
@@ -47,6 +48,14 @@ async function DashboardData() {
           <CardTitle>Latest run per region</CardTitle>
         </CardHeader>
         <CardContent>
+          {runs.filter((r) => r.date === latest).length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>No output yet</EmptyTitle>
+                <EmptyDescription>Trigger a run from Runs.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -71,6 +80,7 @@ async function DashboardData() {
                 ))}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
     </>
