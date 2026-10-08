@@ -91,7 +91,7 @@ async function DashboardData() {
 
 export default function Dashboard() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto">
       <Suspense fallback={<p className="text-sm text-muted-foreground">Loading...</p>}>
         <DashboardData />
       </Suspense>

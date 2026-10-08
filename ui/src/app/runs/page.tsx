@@ -144,7 +144,7 @@ export default function RunsPage() {
   }, [activeId]);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto">
       <Card>
         <CardHeader>
           <CardTitle>Trigger run</CardTitle>
@@ -315,7 +315,7 @@ export default function RunsPage() {
           <CardTitle>Daily cron</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-4">
+          <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto">
             <code className="rounded-md bg-muted p-2 text-xs">{cron}</code>
             <FieldGroup>
               <Field>

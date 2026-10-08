@@ -61,7 +61,7 @@ export default function TrendsPage() {
   }));
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="h-full min-h-0 flex flex-col gap-4 overflow-y-auto">
       <Card>
         <CardHeader>
           <CardTitle>Day to day</CardTitle>
