@@ -128,6 +128,48 @@ export function startJob(date: string, regs: string[], stale: number): Job {
   return job;
 }
 
+export async function listOptions(): Promise<{ date: string; regs: string[] }[]> {
+  const byDate = new Map<string, Set<string>>();
+  try {
+    if (process.env.MYSQL_USER) {
+      const { default: mysql } = await import("mysql2/promise");
+      const conn = await mysql.createConnection({
+        host: process.env.MYSQL_HOST ?? "192.168.41.115",
+        port: Number(process.env.MYSQL_PORT ?? 3306),
+        user: process.env.MYSQL_USER,
+        password: process.env.MYSQL_PASSWORD ?? "",
+        database: process.env.MYSQL_DATABASE ?? "wifi_optimization",
+      });
+      try {
+        const [rows] = (await conn.query(
+          "SELECT TABLE_NAME t FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME LIKE 'discover_interference_reborn\\_%'",
+        )) as unknown as [{ t: string }[]];
+        for (const r of rows) {
+          const m = r.t.match(/^discover_interference_reborn_(\d{8})_(reg\d+)$/);
+          if (!m || m[2] === "template") continue;
+          if (!byDate.has(m[1])) byDate.set(m[1], new Set());
+          byDate.get(m[1])!.add(m[2]);
+        }
+      } finally {
+        await conn.end();
+      }
+    }
+  } catch {
+    // fall through to disk scan
+  }
+  if (byDate.size === 0 && fs.existsSync(/*turbopackIgnore: true*/ OUT_DIR)) {
+    for (const f of fs.readdirSync(/*turbopackIgnore: true*/ OUT_DIR)) {
+      const m = f.match(/^wifi_optimize_(\d{8})_(reg\d+)\.csv$/);
+      if (!m) continue;
+      if (!byDate.has(m[1])) byDate.set(m[1], new Set());
+      byDate.get(m[1])!.add(m[2]);
+    }
+  }
+  return [...byDate.entries()]
+    .map(([date, regs]) => ({ date, regs: [...regs].sort() }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
 export async function readCrontab(): Promise<string[]> {
   try {
     const { stdout } = await execFileAsync("crontab", ["-l"]);

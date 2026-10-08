@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
@@ -21,6 +22,7 @@ type Job = {
 };
 
 export default function RunsPage() {
+  const [dates, setDates] = useState<{ date: string; regs: string[] }[]>([]);
   const [date, setDate] = useState("");
   const [regs, setRegs] = useState<string[]>(REGS);
   const [stale, setStale] = useState("50");
@@ -35,11 +37,29 @@ export default function RunsPage() {
     setJobs(j.jobs ?? []);
   }
 
+  async function refreshOptions() {
+    try {
+      const r = await fetch("/api/options");
+      const j = await r.json();
+      const list = j.dates ?? [];
+      setDates(list);
+      if (list.length && !date) {
+        setDate(list[0].date);
+        setRegs(list[0].regs);
+      }
+    } catch {
+      // keep manual entry
+    }
+  }
+
   useEffect(() => {
-    // fetch-on-mount: load jobs once when page opens
+    // fetch-on-mount: load jobs and available dates once when page opens
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshJobs();
+    refreshOptions();
   }, []);
+
+  const availRegs = dates.find((d) => d.date === date)?.regs ?? REGS;
 
   async function trigger() {
     setBusy(true);
@@ -101,13 +121,36 @@ export default function RunsPage() {
         <CardContent>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="date">Date (YYYYMMDD)</FieldLabel>
-              <Input
-                id="date"
-                placeholder="20261007"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
+              <FieldLabel htmlFor="date">Date</FieldLabel>
+              {dates.length ? (
+                <Select
+                  value={date}
+                  onValueChange={(v) => {
+                    setDate(v);
+                    setRegs(dates.find((d) => d.date === v)?.regs ?? REGS);
+                  }}
+                >
+                  <SelectTrigger id="date">
+                    <SelectValue placeholder="pick date" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {dates.map((d) => (
+                        <SelectItem key={d.date} value={d.date}>
+                          {d.date} ({d.regs.length} regs)
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  id="date"
+                  placeholder="20261007"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                />
+              )}
             </Field>
             <Field>
               <FieldLabel>Regions</FieldLabel>
@@ -116,7 +159,7 @@ export default function RunsPage() {
                 onValueChange={(v) => v.length && setRegs(v as string[])}
                 className="flex flex-wrap gap-2"
               >
-                {REGS.map((r) => (
+                {availRegs.map((r) => (
                   <ToggleGroupItem key={r} value={r} aria-label={r}>
                     {r}
                   </ToggleGroupItem>
