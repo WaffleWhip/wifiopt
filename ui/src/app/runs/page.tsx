@@ -271,7 +271,7 @@ export default function RunsPage() {
           <CardTitle>Output history</CardTitle>
         </CardHeader>
         <CardContent>
-          <Accordion type="single" collapsible>
+          <Accordion>
             {[...new Map(history.map((h) => [h.date, h])).keys()]
               .slice(0, 30)
               .map((date) => {

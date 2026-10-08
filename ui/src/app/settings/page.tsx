@@ -37,7 +37,14 @@ export default function SettingsPage() {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "save failed");
       toast.success("mysql saved, service restarting...");
-      setTimeout(refresh, 8000);
+      setTimeout(async () => {
+        try {
+          const s = await fetch("/api/settings").then((r) => r.json());
+          setDb({ host: s.host ?? "", port: s.port ?? "", user: s.user ?? "", password: "", database: s.database ?? "" });
+        } catch {
+          // service still restarting
+        }
+      }, 8000);
     } catch (e) {
       toast.error((e as Error).message);
     }
