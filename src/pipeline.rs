@@ -9,19 +9,14 @@ use crate::discover::{self, ApInfo};
 use crate::graph;
 use crate::output::{self, OutputRow, Summary};
 
-pub fn optimize(
-    reg: &str,
-    aps: &[ApInfo],
-    stale: usize,
-    threshold_note: &str,
-) -> Vec<OutputRow> {
-    let _ = threshold_note;
+pub fn optimize(reg: &str, aps: Vec<ApInfo>, stale: usize) -> Vec<OutputRow> {
     let updated_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-    let mem2 = graph::mem_rows_for(aps, "2g");
-    let mem5 = graph::mem_rows_for(aps, "5g");
-    let c2 = graph::cluster(aps, "2g", 2).map(|c| c.valid).unwrap_or_default();
-    let c5 = graph::cluster(aps, "5g", 2).map(|c| c.valid).unwrap_or_default();
+    let mem2 = graph::mem_rows_for(&aps, "2g");
+    let mem5 = graph::mem_rows_for(&aps, "5g");
+    let c2 = graph::cluster(&aps, "2g", 2).map(|c| c.valid).unwrap_or_default();
+    let c5 = graph::cluster(&aps, "5g", 2).map(|c| c.valid).unwrap_or_default();
+    drop(aps);
 
     let r2 = cost::optimize_band(&mem2, &c2, stale, "2g");
     let r5 = cost::optimize_band(&mem5, &c5, stale, "5g");
@@ -79,7 +74,8 @@ pub fn run(opts: &Options) -> Result<Summary> {
                     .par_iter()
                     .filter_map(|r| discover::parse(r).ok())
                     .collect();
-                let out = optimize(reg, &aps, opts.stale, "");
+                drop(drows);
+                let out = optimize(reg, aps, opts.stale);
                 total += out.len();
                 let path = format!("{}/wifi_optimize_{}_{}.csv", opts.out, opts.date, reg);
                 if let Err(e) = output::write_csv(&path, &out) {
