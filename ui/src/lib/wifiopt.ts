@@ -285,6 +285,120 @@ export function scheduleRestart(): void {
   }
 }
 
+export type DayAgg = {
+  date: string;
+  n: number;
+  cb2: number;
+  ca2: number;
+  cb5: number;
+  ca5: number;
+  ch2: number;
+  ch5: number;
+};
+
+export async function trends(days: number): Promise<{ ours: DayAgg[]; mysql: DayAgg[] }> {
+  const out: { ours: DayAgg[]; mysql: DayAgg[] } = { ours: [], mysql: [] };
+  const dates: string[] = [];
+  const today = new Date();
+  for (let i = 0; i < Math.min(Math.max(days, 1), 62); i++) {
+    const d = new Date(today.getTime() - i * 86400000);
+    dates.push(
+      `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`,
+    );
+  }
+  // ours from disk
+  if (fs.existsSync(/*turbopackIgnore: true*/ OUT_DIR)) {
+    const files = fs.readdirSync(/*turbopackIgnore: true*/ OUT_DIR);
+    const byDate = new Map<string, DayAgg>();
+    const { default: readline } = await import("node:readline");
+    for (const f of files) {
+      const m = f.match(/^wifi_optimize_(\d{8})_reg\d+\.csv$/);
+      if (!m || !dates.includes(m[1])) continue;
+      if (!byDate.has(m[1])) {
+        byDate.set(m[1], { date: m[1], n: 0, cb2: 0, ca2: 0, cb5: 0, ca5: 0, ch2: 0, ch5: 0 });
+      }
+      const a = byDate.get(m[1])!;
+      const x = a as unknown as { c2: number; c5: number };
+      x.c2 = x.c2 ?? 0;
+      x.c5 = x.c5 ?? 0;
+      const rl = readline.createInterface({
+        input: fs.createReadStream(/*turbopackIgnore: true*/ `${OUT_DIR}/${f}`),
+        crlfDelay: Infinity,
+      });
+      for await (const line of rl) {
+        const v = line.split(",");
+        if (v[0] === "reg" || !line.trim()) continue;
+        const num = (i: number) => ((v[i] ?? "") === "" ? null : Number(v[i]));
+        a.n += 1;
+        const b2 = num(4);
+        const t2 = num(6);
+        const b5 = num(10);
+        const t5 = num(12);
+        if (b2 !== null) {
+          a.cb2 += b2;
+          x.c2 += 1;
+        }
+        if (t2 !== null) a.ca2 += t2;
+        if (b5 !== null) {
+          a.cb5 += b5;
+          x.c5 += 1;
+        }
+        if (t5 !== null) a.ca5 += t5;
+        if (v[7] === "CHANGE") a.ch2 += 1;
+        if (v[13] === "CHANGE") a.ch5 += 1;
+      }
+    }
+    for (const a of byDate.values()) {
+      const x = a as unknown as { c2: number; c5: number };
+      const c2 = x.c2 || 1;
+      const c5 = x.c5 || 1;
+      out.ours.push({
+        date: a.date,
+        n: a.n,
+        cb2: a.cb2 / c2,
+        ca2: a.ca2 / c2,
+        cb5: a.cb5 / c5,
+        ca5: a.ca5 / c5,
+        ch2: a.ch2,
+        ch5: a.ch5,
+      });
+    }
+    out.ours.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  // production from mysql
+  try {
+    if (process.env.MYSQL_USER) {
+      const { default: mysql } = await import("mysql2/promise");
+      const conn = await mysql.createConnection({
+        host: process.env.MYSQL_HOST ?? "192.168.41.115",
+        port: Number(process.env.MYSQL_PORT ?? 3306),
+        user: process.env.MYSQL_USER,
+        password: process.env.MYSQL_PASSWORD ?? "",
+        database: process.env.MYSQL_DATABASE ?? "wifi_optimization",
+      });
+      try {
+        const [tables] = (await conn.query(
+          "SELECT TABLE_NAME t FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME LIKE 'wifi_optimize\\_%'",
+        )) as unknown as [{ t: string }[]];
+        const have = new Set(tables.map((r) => r.t));
+        for (const d of dates) {
+          if (!have.has(`wifi_optimize_${d}`)) continue;
+          const [rows] = (await conn.query(
+            `SELECT COUNT(*) n, AVG(cost_before_2g) cb2, AVG(cost_after_2g) ca2, AVG(cost_before_5g) cb5, AVG(cost_after_5g) ca5, SUM(status_2g='CHANGE') ch2, SUM(status_5g='CHANGE') ch5 FROM wifi_optimize_${d}`,
+          )) as unknown as [DayAgg[]];
+          if (rows[0]) out.mysql.push({ ...rows[0], date: d });
+        }
+      } finally {
+        await conn.end();
+      }
+    }
+  } catch {
+    // mysql optional
+  }
+  out.mysql.sort((a, b) => a.date.localeCompare(b.date));
+  return out;
+}
+
 export async function readCrontab(): Promise<string[]> {
   try {
     const { stdout } = await execFileAsync("crontab", ["-l"]);
