@@ -279,7 +279,24 @@ fn start_job(state: &Arc<State>, date: &str, regs: &[String], stale: usize) -> R
     let jstale = job.stale;
     let st = Arc::clone(state);
     std::thread::spawn(move || {
-        let res = Command::new(&bin)
+        let mut cmd = Command::new(&bin);
+        // Mirror the old launcher: derive DATABASE_URL from MYSQL_* when unset.
+        if std::env::var("DATABASE_URL").is_err() {
+            if let Ok(user) = std::env::var("MYSQL_USER") {
+                if !user.is_empty() {
+                    let url = format!(
+                        "mysql://{}:{}@{}:{}/{}",
+                        user,
+                        std::env::var("MYSQL_PASSWORD").unwrap_or_default(),
+                        env("MYSQL_HOST", "192.168.41.115"),
+                        env("MYSQL_PORT", "3306"),
+                        env("MYSQL_DATABASE", "wifi_optimization")
+                    );
+                    cmd.env("DATABASE_URL", url);
+                }
+            }
+        }
+        let res = cmd
             .args([
                 "--date",
                 &jdate,
