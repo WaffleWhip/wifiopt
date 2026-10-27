@@ -55,6 +55,14 @@ fn env(k: &str, dflt: &str) -> String {
     std::env::var(k).unwrap_or_else(|_| dflt.to_string())
 }
 
+/// Uniform true/false parsing ("true"/"1"/"yes", case-insensitive).
+fn env_bool(k: &str, dflt: bool) -> bool {
+    match std::env::var(k) {
+        Ok(v) => matches!(v.trim().to_lowercase().as_str(), "true" | "1" | "yes"),
+        Err(_) => dflt,
+    }
+}
+
 pub fn load_cfg() -> Cfg {
     Cfg {
         port: env("PORT", "3000").parse().unwrap_or(3000),
@@ -169,7 +177,7 @@ pub fn spawn_scheduler(state: Arc<State>) {
             }
         }
         let stale = state.cfg.sched_stale;
-        let upload = env("SCHEDULE_UPLOAD", "0") == "1";
+        let upload = env_bool("SCHEDULE_UPLOAD", false);
         match start_job(&state, &today, &all_regs(), stale, upload) {
             Ok(j) => {
                 println!("[scheduler] daily run started: {}", j.id);
