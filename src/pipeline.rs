@@ -95,7 +95,7 @@ pub fn run(opts: &Options) -> Result<Summary> {
     // Upload path mirrors production (ensure + truncate + per-reg batched
     // INSERT pipelined with the next region's compute). Dormant by default.
     let table = if opts.upload {
-        let t = upload::ensure_table(&opts.db_url, &opts.date)?;
+        let t = upload::ensure_table(&opts.db_url, &opts.date, &opts.table)?;
         println!("[{}] target table: {t}", ts());
         if opts.regs.len() >= 7 {
             upload::truncate_table(&opts.db_url, &t)?;

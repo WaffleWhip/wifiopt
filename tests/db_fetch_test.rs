@@ -12,6 +12,7 @@ fn test_opts() -> Options {
         stay_delta: 0.05,
         stale: 50,
         upload: false,
+        table: String::new(),
     }
 }
 

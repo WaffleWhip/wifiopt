@@ -12,6 +12,8 @@ pub struct Options {
     pub stale: usize,
     /// Write results to wifi_optimize_<date>. Off by default (fetch-only).
     pub upload: bool,
+    /// Override upload table name (scratch testing). Empty = wifi_optimize_<date>.
+    pub table: String,
 }
 
 #[derive(Parser, Debug)]
@@ -34,6 +36,9 @@ struct Cli {
     /// Upload results to MySQL wifi_optimize_<date> (default: fetch-only CSV).
     #[arg(long, default_value_t = false)]
     upload: bool,
+    /// Override upload table (scratch testing). Must be [A-Za-z0-9_]+.
+    #[arg(long, default_value = "")]
+    table: String,
 }
 
 pub fn parse_args() -> Options {
@@ -66,6 +71,7 @@ fn from_cli(cli: Cli) -> Options {
         stay_delta: cli.stay_delta,
         stale: cli.stale,
         upload: cli.upload,
+        table: cli.table,
     }
 }
 

@@ -22,6 +22,14 @@ pub fn table_for(date: &str) -> Result<String> {
     Ok(format!("wifi_optimize_{date}"))
 }
 
+/// Explicit table override (scratch/backfill). Strict charset, no dates needed.
+pub fn table_name(name: &str) -> Result<String> {
+    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+        anyhow::bail!("bad table: {name}");
+    }
+    Ok(name.to_string())
+}
+
 pub fn ensure_sql(table: &str) -> String {
     format!(
         "CREATE TABLE IF NOT EXISTS `{table}` (
@@ -124,8 +132,12 @@ pub fn pool(db_url: &str) -> Result<mysql::Pool> {
     mysql::Pool::new(db_url).context("db pool")
 }
 
-pub fn ensure_table(db_url: &str, date: &str) -> Result<String> {
-    let table = table_for(date)?;
+pub fn ensure_table(db_url: &str, date: &str, table_override: &str) -> Result<String> {
+    let table = if table_override.is_empty() {
+        table_for(date)?
+    } else {
+        table_name(table_override)?
+    };
     let p = pool(db_url)?;
     let mut conn = p.get_conn().context("db conn")?;
     conn.query_drop(ensure_sql(&table))?;

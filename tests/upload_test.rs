@@ -34,6 +34,12 @@ fn table_name_validated() {
     assert_eq!(upload::table_for("20261021").unwrap(), "wifi_optimize_20261021");
     assert!(upload::table_for("2026-10-21").is_err());
     assert!(upload::table_for("20261021; DROP").is_err());
+    assert_eq!(
+        upload::table_name("wifi_optimize_20990101").unwrap(),
+        "wifi_optimize_20990101"
+    );
+    assert!(upload::table_name("wifi_optimize_20990101; DROP").is_err());
+    assert!(upload::table_name("").is_err());
 }
 
 #[test]
