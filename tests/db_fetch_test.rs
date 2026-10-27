@@ -11,6 +11,7 @@ fn test_opts() -> Options {
         rssi_threshold: -85.0,
         stay_delta: 0.05,
         stale: 50,
+        upload: false,
     }
 }
 
