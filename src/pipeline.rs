@@ -30,12 +30,24 @@ pub fn optimize(reg: &str, aps: Vec<ApInfo>, stale: usize) -> Vec<OutputRow> {
         ts(),
         aps.len()
     );
+    let t_clu = std::time::Instant::now();
     let c2 = graph::cluster(&aps, "2g", 2).map(|c| c.valid).unwrap_or_default();
     let c5 = graph::cluster(&aps, "5g", 2).map(|c| c.valid).unwrap_or_default();
     drop(aps);
+    println!(
+        "[{}] {reg}: cluster took {:.2}s",
+        ts(),
+        t_clu.elapsed().as_secs_f64()
+    );
 
+    let t_opt = std::time::Instant::now();
     let r2 = cost::optimize_band(&mem2, &c2, stale, "2g");
     let r5 = cost::optimize_band(&mem5, &c5, stale, "5g");
+    println!(
+        "[{}] {reg}: optimize took {:.2}s",
+        ts(),
+        t_opt.elapsed().as_secs_f64()
+    );
 
     let mut map5: HashMap<String, OptimizeRow> = HashMap::new();
     for r in r5 {
@@ -85,16 +97,28 @@ pub fn run(opts: &Options) -> Result<Summary> {
         println!("[{}] start {reg} ...", ts());
         let _ = std::io::Write::flush(&mut std::io::stdout());
         let mut aps: Vec<ApInfo> = Vec::new();
+        let t_fe = std::time::Instant::now();
         match db::stream_aps(opts, reg, |ap| aps.push(ap)) {
-            Ok(_) => {
+            Ok(n) => {
+                println!(
+                    "[{}] {reg}: fetch+parse {n} rows took {:.2}s",
+                    ts(),
+                    t_fe.elapsed().as_secs_f64()
+                );
                 let out = optimize(reg, aps, opts.stale);
                 total += out.len();
                 let path = format!("{}/wifi_optimize_{}_{}.csv", opts.out, opts.date, reg);
+                let t_wr = std::time::Instant::now();
                 if let Err(e) = output::write_csv(&path, &out) {
                     eprintln!("[{}] write {reg} failed: {e:#}", ts());
                     failed.push(reg.clone());
                 } else {
-                    println!("[{}] {reg}: {} rows -> {path}", ts(), out.len());
+                    println!(
+                        "[{}] {reg}: {} rows -> {path} (write {:.2}s)",
+                        ts(),
+                        out.len(),
+                        t_wr.elapsed().as_secs_f64()
+                    );
                 }
             }
             Err(e) => {
