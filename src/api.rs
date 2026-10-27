@@ -33,7 +33,6 @@ pub struct Cfg {
     pub port: u16,
     pub out_dir: PathBuf,
     pub bin: PathBuf,
-    pub env_path: PathBuf,
     pub sched_hour: u32,
     pub sched_minute: u32,
     pub sched_stale: usize,
@@ -61,7 +60,6 @@ pub fn load_cfg() -> Cfg {
         port: env("PORT", "3000").parse().unwrap_or(3000),
         out_dir: PathBuf::from(env("WIFIPT_OUT", "/root/wifiopt/out")),
         bin: PathBuf::from(env("WIFIPT_BIN", "/root/wifiopt/target/release/wifiopt")),
-        env_path: PathBuf::from(env("WIFIPT_ENV", ".env")),
         sched_hour: env("SCHEDULE_HOUR", "20").parse().unwrap_or(20),
         sched_minute: env("SCHEDULE_MINUTE", "0").parse().unwrap_or(0),
         sched_stale: env("SCHEDULE_STALE", "50").parse().unwrap_or(50),
@@ -116,6 +114,8 @@ pub struct Job {
     date: String,
     regs: Vec<String>,
     stale: usize,
+    #[serde(default)]
+    upload: bool,
     status: String, // running | done | failed
     #[serde(rename = "startedAt")]
     started_at: String,
@@ -169,7 +169,8 @@ pub fn spawn_scheduler(state: Arc<State>) {
             }
         }
         let stale = state.cfg.sched_stale;
-        match start_job(&state, &today, &all_regs(), stale) {
+        let upload = env("SCHEDULE_UPLOAD", "0") == "1";
+        match start_job(&state, &today, &all_regs(), stale, upload) {
             Ok(j) => {
                 println!("[scheduler] daily run started: {}", j.id);
                 *state.last_scheduled.lock().unwrap() = Some(ScheduledRun {
@@ -240,7 +241,13 @@ fn valid_reg(s: &str) -> bool {
         && s[3..].bytes().all(|b| b.is_ascii_digit())
 }
 
-fn start_job(state: &Arc<State>, date: &str, regs: &[String], stale: usize) -> Result<Job> {
+pub fn start_job(
+    state: &Arc<State>,
+    date: &str,
+    regs: &[String],
+    stale: usize,
+    upload: bool,
+) -> Result<Job> {
     if !valid_date(date) {
         anyhow::bail!("bad date");
     }
@@ -262,6 +269,7 @@ fn start_job(state: &Arc<State>, date: &str, regs: &[String], stale: usize) -> R
         date: date.to_string(),
         regs: regs.to_vec(),
         stale,
+        upload,
         status: "running".to_string(),
         started_at: chrono::Utc::now().to_rfc3339(),
         finished_at: None,
@@ -277,6 +285,7 @@ fn start_job(state: &Arc<State>, date: &str, regs: &[String], stale: usize) -> R
     let jid = job.id.clone();
     let jdate = job.date.clone();
     let jstale = job.stale;
+    let jupload = job.upload;
     let st = Arc::clone(state);
     std::thread::spawn(move || {
         let mut cmd = Command::new(&bin);
@@ -296,17 +305,21 @@ fn start_job(state: &Arc<State>, date: &str, regs: &[String], stale: usize) -> R
                 }
             }
         }
+        let mut args = vec![
+            "--date".to_string(),
+            jdate,
+            "--reg".to_string(),
+            regs_arg,
+            "--out".to_string(),
+            out.to_string_lossy().to_string(),
+            "--stale".to_string(),
+            jstale.to_string(),
+        ];
+        if jupload {
+            args.push("--upload".to_string());
+        }
         let res = cmd
-            .args([
-                "--date",
-                &jdate,
-                "--reg",
-                &regs_arg,
-                "--out",
-                &out.to_string_lossy(),
-                "--stale",
-                &jstale.to_string(),
-            ])
+            .args(&args)
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_err))
             .status();
@@ -816,7 +829,7 @@ const INDEX: &str = r#"{"service":"server","ui":false,"endpoints":[
 {"method":"GET","path":"/","desc":"this index"},
 {"method":"GET","path":"/api/health","desc":"binary, out dir, cron, jobs, recent errors, db ping"},
 {"method":"GET","path":"/api/runs","desc":"csv outputs, summary.json, jobs"},
-{"method":"POST","path":"/api/runs","desc":"start job {date:YYYYMMDD, regs:[regN], stale}"},
+{"method":"POST","path":"/api/runs","desc":"start job {date:YYYYMMDD, regs:[regN], stale, upload:bool}"},
 {"method":"GET","path":"/api/jobs/:id","desc":"job status + last 60 log lines"},
 {"method":"GET","path":"/api/options","desc":"available dates+regs (mysql, disk fallback)"},
 {"method":"GET","path":"/api/trends?days=N","desc":"daily aggregates, ours vs mysql"},
@@ -852,7 +865,8 @@ pub fn route(state: &Arc<State>, req: &Req) -> (u16, String) {
                 })
                 .unwrap_or_else(|| (1..=7).map(|i| format!("reg{i}")).collect());
             let stale = v["stale"].as_u64().unwrap_or(50) as usize;
-            match start_job(state, &date, &regs, stale) {
+            let upload = v["upload"].as_bool().unwrap_or(false);
+            match start_job(state, &date, &regs, stale, upload) {
                 Ok(j) => (202, serde_json::json!({"job": j}).to_string()),
                 Err(e) => err(400, format!("{e:#}")),
             }
@@ -973,7 +987,7 @@ pub fn route(state: &Arc<State>, req: &Req) -> (u16, String) {
             }))
         }
         ("GET", ["api", "settings"]) => {
-            let f = parse_env_file(&cfg.env_path);
+            let f = parse_env_file(Path::new(".env"));
             ok(&serde_json::json!({
                 "host": if env_get(&f, "MYSQL_HOST").is_empty() { "192.168.41.115".into() } else { env_get(&f, "MYSQL_HOST") },
                 "port": if env_get(&f, "MYSQL_PORT").is_empty() { "3306".into() } else { env_get(&f, "MYSQL_PORT") },
@@ -994,7 +1008,7 @@ pub fn route(state: &Arc<State>, req: &Req) -> (u16, String) {
             if port.parse::<u16>().is_err() {
                 return err(400, "bad port".into());
             }
-            let mut f = parse_env_file(&cfg.env_path);
+            let mut f = parse_env_file(Path::new(".env"));
             f.insert("MYSQL_HOST".into(), host);
             f.insert("MYSQL_PORT".into(), port);
             f.insert("MYSQL_USER".into(), user);
@@ -1012,7 +1026,7 @@ pub fn route(state: &Arc<State>, req: &Req) -> (u16, String) {
                 .collect::<Vec<_>>()
                 .join("\n")
                 + "\n";
-            match std::fs::write(&cfg.env_path, body) {
+            match std::fs::write(Path::new(".env"), body) {
                 Ok(()) => {
                     // best-effort restart like before; caller retries on new port if changed
                     std::thread::spawn(|| {

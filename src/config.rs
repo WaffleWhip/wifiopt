@@ -10,6 +10,8 @@ pub struct Options {
     pub rssi_threshold: f32,
     pub stay_delta: f64,
     pub stale: usize,
+    /// Write results to wifi_optimize_<date>. Off by default (fetch-only).
+    pub upload: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -29,6 +31,9 @@ struct Cli {
     stay_delta: f64,
     #[arg(long, default_value_t = 50)]
     stale: usize,
+    /// Upload results to MySQL wifi_optimize_<date> (default: fetch-only CSV).
+    #[arg(long, default_value_t = false)]
+    upload: bool,
 }
 
 pub fn parse_args() -> Options {
@@ -60,6 +65,7 @@ fn from_cli(cli: Cli) -> Options {
         rssi_threshold: cli.rssi_threshold,
         stay_delta: cli.stay_delta,
         stale: cli.stale,
+        upload: cli.upload,
     }
 }
 

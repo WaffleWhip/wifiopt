@@ -7,6 +7,7 @@ use crate::db;
 use crate::discover::{self, ApInfo};
 use crate::graph;
 use crate::output::{self, OutputRow, Summary};
+use crate::upload;
 
 pub fn ts() -> String {
     chrono::Local::now().format("%H:%M:%S").to_string()
@@ -91,8 +92,24 @@ pub fn optimize(reg: &str, aps: Vec<ApInfo>, stale: usize) -> Vec<OutputRow> {
 
 pub fn run(opts: &Options) -> Result<Summary> {
     std::fs::create_dir_all(&opts.out).context("out dir")?;
+    // Upload path mirrors production (ensure + truncate + per-reg batched
+    // INSERT pipelined with the next region's compute). Dormant by default.
+    let table = if opts.upload {
+        let t = upload::ensure_table(&opts.db_url, &opts.date)?;
+        println!("[{}] target table: {t}", ts());
+        if opts.regs.len() >= 7 {
+            upload::truncate_table(&opts.db_url, &t)?;
+            println!("[{}] truncated {t}", ts());
+        } else {
+            println!("[{}] partial regs, truncate skipped", ts());
+        }
+        Some(t)
+    } else {
+        None
+    };
     let mut total = 0;
     let mut failed = Vec::new();
+    let mut prev_upload: Option<std::thread::JoinHandle<Result<usize>>> = None;
     for reg in &opts.regs {
         println!("[{}] start {reg} ...", ts());
         let _ = std::io::Write::flush(&mut std::io::stdout());
@@ -119,11 +136,50 @@ pub fn run(opts: &Options) -> Result<Summary> {
                         out.len(),
                         t_wr.elapsed().as_secs_f64()
                     );
+                    if let Some(t) = table.clone() {
+                        if let Some(prev) = prev_upload.take() {
+                            match prev.join() {
+                                Ok(Ok(n)) => println!("[{}] upload committed {n} rows", ts()),
+                                Ok(Err(e)) => {
+                                    eprintln!("[{}] previous upload failed: {e:#}", ts());
+                                    failed.push(reg.clone());
+                                }
+                                Err(_) => {
+                                    eprintln!("[{}] previous upload thread panicked", ts());
+                                    failed.push(reg.clone());
+                                }
+                            }
+                        }
+                        let db_url = opts.db_url.clone();
+                        let reg_name = reg.clone();
+                        prev_upload = Some(std::thread::spawn(move || {
+                            let t_up = std::time::Instant::now();
+                            let n = upload::upload_rows(&db_url, &t, &out)?;
+                            eprintln!(
+                                "[upload {reg_name}] committed {n} rows in {:.2}s",
+                                t_up.elapsed().as_secs_f64()
+                            );
+                            Ok(n)
+                        }));
+                    }
                 }
             }
             Err(e) => {
                 eprintln!("[{}] load {reg} failed: {e:#}", ts());
                 failed.push(reg.clone());
+            }
+        }
+    }
+    if let Some(prev) = prev_upload.take() {
+        match prev.join() {
+            Ok(Ok(n)) => println!("[{}] upload committed {n} rows", ts()),
+            Ok(Err(e)) => {
+                eprintln!("[{}] final upload failed: {e:#}", ts());
+                failed.push("upload".to_string());
+            }
+            Err(_) => {
+                eprintln!("[{}] final upload thread panicked", ts());
+                failed.push("upload".to_string());
             }
         }
     }

@@ -6,3 +6,4 @@ pub mod discover;
 pub mod graph;
 pub mod output;
 pub mod pipeline;
+pub mod upload;
