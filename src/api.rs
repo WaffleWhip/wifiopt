@@ -610,8 +610,22 @@ fn parse_env_file(path: &Path) -> HashMap<String, String> {
     let mut out = HashMap::new();
     if let Ok(text) = std::fs::read_to_string(path) {
         for line in text.split('\n') {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
             if let Some((k, v)) = line.split_once('=') {
-                out.insert(k.to_string(), v.to_string());
+                let v = v.trim();
+                // accept dotenv-style quoting so bash can source the same file
+                let v = if v.len() >= 2
+                    && ((v.starts_with('\'') && v.ends_with('\''))
+                        || (v.starts_with('"') && v.ends_with('"')))
+                {
+                    &v[1..v.len() - 1]
+                } else {
+                    v
+                };
+                out.insert(k.trim().to_string(), v.to_string());
             }
         }
     }
