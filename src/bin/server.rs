@@ -1,4 +1,4 @@
-//! api: control API for the wifiopt optimizer (replaces the old Next.js UI).
+//! server: control API for the wifiopt optimizer (replaces the old Next.js UI).
 //!
 //! std-only HTTP (no web framework). JSON everywhere, even for errors.
 //!
@@ -812,7 +812,7 @@ fn err(status: u16, msg: String) -> (u16, String) {
     )
 }
 
-const INDEX: &str = r#"{"service":"api","ui":false,"endpoints":[
+const INDEX: &str = r#"{"service":"server","ui":false,"endpoints":[
 {"method":"GET","path":"/","desc":"this index"},
 {"method":"GET","path":"/api/health","desc":"binary, out dir, cron, jobs, recent errors, db ping"},
 {"method":"GET","path":"/api/runs","desc":"csv outputs, summary.json, jobs"},
@@ -1018,7 +1018,7 @@ fn route(state: &Arc<State>, req: &Req) -> (u16, String) {
                     std::thread::spawn(|| {
                         std::thread::sleep(std::time::Duration::from_secs(2));
                         let _ = Command::new("sh")
-                            .args(["-c", "systemctl restart api"])
+                            .args(["-c", "systemctl restart server"])
                             .output();
                     });
                     ok(&serde_json::json!({"ok": true, "restartRequired": true}))
@@ -1034,7 +1034,7 @@ fn main() {
     let cfg = load_cfg();
     let sched = load_schedule(&cfg);
     println!(
-        "api on :{} out={} daily={:02}:{:02}",
+        "server on :{} out={} daily={:02}:{:02}",
         cfg.port,
         cfg.out_dir.display(),
         sched.hour,
