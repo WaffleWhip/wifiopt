@@ -9,6 +9,7 @@ pub const INVALID_BSSID: &str = "00:00:00:00:00:00";
 
 #[derive(Debug, Clone)]
 pub struct OwnedRadio {
+    pub slot: u8,
     pub channel: Option<u8>,
     pub bssid: String,
     pub possible: Vec<u8>,
@@ -147,8 +148,8 @@ pub fn parse(row: &DiscoverRow) -> Result<ApInfo> {
     let cfg: BTreeMap<String, RadioConfig> = parse_map(&row.json_config);
     let nei: BTreeMap<String, NbRaw> = parse_map(&row.json_neighbor);
 
-    let mut radios_2g = Vec::new();
-    let mut radios_5g = Vec::new();
+    let mut radios_2g: Vec<(u8, OwnedRadio)> = Vec::new();
+    let mut radios_5g: Vec<(u8, OwnedRadio)> = Vec::new();
     for (k, r) in &cfg {
         if !r.ssid_enable {
             continue;
@@ -158,6 +159,7 @@ pub fn parse(row: &DiscoverRow) -> Result<ApInfo> {
             continue;
         }
         let radio = OwnedRadio {
+            slot: 0,
             channel: channel_to_u8(&r.channel),
             bssid: b,
             possible: r
@@ -166,12 +168,29 @@ pub fn parse(row: &DiscoverRow) -> Result<ApInfo> {
                 .map(parse_possible_ch)
                 .unwrap_or_default(),
         };
+        // Numeric slot order: BTreeMap<String> sorts "10" before "5",
+        // and the old HashMap order was random per run (misread radio bug).
         let slot: u8 = k.parse().unwrap_or(0);
-        if (1..=4).contains(&slot) {
-            radios_2g.push(radio);
-        } else if slot >= 5 {
-            radios_5g.push(radio);
+        if slot == 0 {
+            continue;
         }
+        if (1..=4).contains(&slot) {
+            radios_2g.push((slot, radio));
+        } else if slot >= 5 {
+            radios_5g.push((slot, radio));
+        }
+    }
+    radios_2g.sort_by_key(|(s, _)| *s);
+    radios_5g.sort_by_key(|(s, _)| *s);
+    let mut radios_2g_out = Vec::with_capacity(radios_2g.len());
+    for (slot, mut radio) in radios_2g {
+        radio.slot = slot;
+        radios_2g_out.push(radio);
+    }
+    let mut radios_5g_out = Vec::with_capacity(radios_5g.len());
+    for (slot, mut radio) in radios_5g {
+        radio.slot = slot;
+        radios_5g_out.push(radio);
     }
 
     let mut neighbors_2g = Vec::new();
@@ -195,9 +214,32 @@ pub fn parse(row: &DiscoverRow) -> Result<ApInfo> {
 
     Ok(ApInfo {
         serial: row.serial.clone(),
-        radios_2g,
-        radios_5g,
+        radios_2g: radios_2g_out,
+        radios_5g: radios_5g_out,
         neighbors_2g,
         neighbors_5g,
     })
+}
+
+/// True when >=2 enabled same-band radios report different known channels.
+/// Such ONTs confused the old reader (random radio picked per run);
+/// the optimizer now always reads the primary radio (see graph::mem_rows).
+pub fn divergent_radios(ap: &ApInfo, band: &str) -> bool {
+    let radios = if band == "2g" {
+        &ap.radios_2g
+    } else {
+        &ap.radios_5g
+    };
+    let mut seen: Vec<u8> = Vec::new();
+    for r in radios {
+        if let Some(c) = r.channel {
+            if !seen.contains(&c) {
+                seen.push(c);
+            }
+            if seen.len() > 1 {
+                return true;
+            }
+        }
+    }
+    false
 }

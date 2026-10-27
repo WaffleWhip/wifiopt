@@ -39,7 +39,10 @@ fn csv_header_matches_wifi_optimize() {
 
 #[test]
 fn csv_roundtrip_with_nulls() {
-    let dir = std::env::temp_dir().join("wifiopt_out_test");
+    // target/ is always writable; system temp varies by machine/env.
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("wifiopt_out_test");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("r.csv");
     let p = path.to_str().unwrap();

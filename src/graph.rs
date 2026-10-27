@@ -60,7 +60,15 @@ fn mem_rows(aps: &[ApInfo], band: &str) -> Vec<MemRow> {
             } else {
                 (&ap.radios_5g, &ap.neighbors_5g)
             };
-            let first = radios.first();
+            // Radios arrive sorted by numeric slot. The primary is the lowest
+            // slot with a known in-band channel (the radio execution targets).
+            // Radios with empty/out-of-band channels (guest/virtual slots) are
+            // skipped so `before` never reads a radio execution never touches.
+            let primary = radios
+                .iter()
+                .find(|r| r.channel.is_some_and(|c| band_ok(c as i32, band)))
+                .or(radios.first());
+            let first = primary;
             MemRow {
                 sn: ap.serial.clone(),
                 own: radios.iter().map(|r| r.bssid.clone()).collect(),

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::config::Options;
 use crate::cost::{self, OptimizeRow};
 use crate::db;
-use crate::discover::ApInfo;
+use crate::discover::{self, ApInfo};
 use crate::graph;
 use crate::output::{self, OutputRow, Summary};
 
@@ -17,6 +17,19 @@ pub fn optimize(reg: &str, aps: Vec<ApInfo>, stale: usize) -> Vec<OutputRow> {
 
     let mem2 = graph::mem_rows_for(&aps, "2g");
     let mem5 = graph::mem_rows_for(&aps, "5g");
+    let div2 = aps
+        .iter()
+        .filter(|a| discover::divergent_radios(a, "2g"))
+        .count();
+    let div5 = aps
+        .iter()
+        .filter(|a| discover::divergent_radios(a, "5g"))
+        .count();
+    println!(
+        "[{}] {reg}: multiradio_divergent_2g={div2} 5g={div5} of {}",
+        ts(),
+        aps.len()
+    );
     let c2 = graph::cluster(&aps, "2g", 2).map(|c| c.valid).unwrap_or_default();
     let c5 = graph::cluster(&aps, "5g", 2).map(|c| c.valid).unwrap_or_default();
     drop(aps);
