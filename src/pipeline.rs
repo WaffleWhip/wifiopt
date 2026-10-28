@@ -13,13 +13,7 @@ pub fn ts() -> String {
     chrono::Local::now().format("%H:%M:%S").to_string()
 }
 
-pub fn optimize(
-    reg: &str,
-    aps: Vec<ApInfo>,
-    stale: usize,
-    bruteforce: bool,
-    max_k: usize,
-) -> Vec<OutputRow> {
+pub fn optimize(reg: &str, aps: Vec<ApInfo>, stale: usize, max_k: usize) -> Vec<OutputRow> {
     let updated_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     let mem2 = graph::mem_rows_for(&aps, "2g");
@@ -48,26 +42,18 @@ pub fn optimize(
     );
 
     let t_opt = std::time::Instant::now();
-    let (r2, r5) = if bruteforce {
-        let (a, s2) = cost::optimize_band_bruteforce(&mem2, &c2, stale, max_k, "2g");
-        let (b, s5) = cost::optimize_band_bruteforce(&mem5, &c5, stale, max_k, "5g");
-        println!(
-            "[{}] {reg}: bruteforce 2g groups={} exhaustive={} fallback={} | 5g groups={} exhaustive={} fallback={}",
-            ts(),
-            s2.groups,
-            s2.exhaustive,
-            s2.fallback,
-            s5.groups,
-            s5.exhaustive,
-            s5.fallback
-        );
-        (a, b)
-    } else {
-        (
-            cost::optimize_band(&mem2, &c2, stale, "2g"),
-            cost::optimize_band(&mem5, &c5, stale, "5g"),
-        )
-    };
+    let (r2, s2) = cost::optimize_band_bruteforce(&mem2, &c2, stale, max_k, "2g");
+    let (r5, s5) = cost::optimize_band_bruteforce(&mem5, &c5, stale, max_k, "5g");
+    println!(
+        "[{}] {reg}: bruteforce 2g groups={} exhaustive={} fallback={} | 5g groups={} exhaustive={} fallback={}",
+        ts(),
+        s2.groups,
+        s2.exhaustive,
+        s2.fallback,
+        s5.groups,
+        s5.exhaustive,
+        s5.fallback
+    );
     println!(
         "[{}] {reg}: optimize took {:.2}s",
         ts(),
@@ -146,7 +132,7 @@ pub fn run(opts: &Options) -> Result<Summary> {
                     ts(),
                     t_fe.elapsed().as_secs_f64()
                 );
-                let out = optimize(reg, aps, opts.stale, opts.bruteforce, opts.bruteforce_max_k);
+                let out = optimize(reg, aps, opts.stale, opts.bruteforce_max_k);
                 total += out.len();
                 let path = format!("{}/wifi_optimize_{}_{}.csv", opts.out, opts.date, reg);
                 let t_wr = std::time::Instant::now();

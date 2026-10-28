@@ -12,9 +12,8 @@ pub struct Options {
     pub upload: bool,
     /// Override upload table name (scratch testing). Empty = wifi_optimize_<date>.
     pub table: String,
-    /// Joint per-cluster exhaustive search instead of coordinate descent.
-    pub bruteforce: bool,
-    /// Max cluster size for exhaustive search (larger falls back to descent).
+    /// Max cluster size for exhaustive joint search (larger falls back
+    /// to coordinate descent inside the joint optimizer).
     pub bruteforce_max_k: usize,
 }
 
@@ -37,10 +36,8 @@ struct Cli {
     /// Override upload table (scratch testing). Must be [A-Za-z0-9_]+.
     #[arg(long, default_value = "")]
     table: String,
-    /// Joint per-cluster exhaustive search instead of coordinate descent.
-    #[arg(long, default_value_t = false)]
-    bruteforce: bool,
-    /// Max cluster size for exhaustive search (larger falls back to descent).
+    /// Max cluster size for exhaustive joint search (larger falls back
+    /// to coordinate descent inside the joint optimizer).
     #[arg(long, default_value_t = 4)]
     bruteforce_max_k: usize,
 }
@@ -74,7 +71,6 @@ fn from_cli(cli: Cli) -> Options {
         stale: cli.stale,
         upload: cli.upload,
         table: cli.table,
-        bruteforce: cli.bruteforce,
         bruteforce_max_k: cli.bruteforce_max_k,
     }
 }

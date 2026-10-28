@@ -124,8 +124,6 @@ pub struct Job {
     stale: usize,
     #[serde(default)]
     upload: bool,
-    #[serde(default)]
-    bruteforce: bool,
     status: String, // running | done | failed
     #[serde(rename = "startedAt")]
     started_at: String,
@@ -181,8 +179,7 @@ pub fn spawn_scheduler(state: Arc<State>) {
         }
         let stale = state.cfg.sched_stale;
         let upload = env_bool("SCHEDULE_UPLOAD", false);
-        let bruteforce = env_bool("SCHEDULE_BRUTEFORCE", false);
-        match start_job(&state, &today, &all_regs(), stale, upload, bruteforce) {
+        match start_job(&state, &today, &all_regs(), stale, upload) {
             Ok(j) => {
                 println!("[scheduler] daily run started: {}", j.id);
                 *state.last_scheduled.lock().unwrap() = Some(ScheduledRun {
@@ -259,7 +256,6 @@ pub fn start_job(
     regs: &[String],
     stale: usize,
     upload: bool,
-    bruteforce: bool,
 ) -> Result<Job> {
     if !valid_date(date) {
         anyhow::bail!("bad date");
@@ -283,7 +279,6 @@ pub fn start_job(
         regs: regs.to_vec(),
         stale,
         upload,
-        bruteforce,
         status: "running".to_string(),
         started_at: chrono::Utc::now().to_rfc3339(),
         finished_at: None,
@@ -300,7 +295,6 @@ pub fn start_job(
     let jdate = job.date.clone();
     let jstale = job.stale;
     let jupload = job.upload;
-    let jbruteforce = job.bruteforce;
     let st = Arc::clone(state);
     std::thread::spawn(move || {
         let mut cmd = Command::new(&bin);
@@ -332,9 +326,6 @@ pub fn start_job(
         ];
         if jupload {
             args.push("--upload".to_string());
-        }
-        if jbruteforce {
-            args.push("--bruteforce".to_string());
         }
         let res = cmd
             .args(&args)
@@ -907,7 +898,7 @@ const INDEX: &str = r#"{"service":"server","ui":false,"endpoints":[
 {"method":"GET","path":"/","desc":"this index"},
 {"method":"GET","path":"/api/health","desc":"binary, out dir, cron, jobs, recent errors, db ping"},
 {"method":"GET","path":"/api/runs","desc":"csv outputs, summary.json, jobs"},
-{"method":"POST","path":"/api/runs","desc":"start job {date:YYYYMMDD, regs:[regN], stale, upload:bool, bruteforce:bool}"},
+{"method":"POST","path":"/api/runs","desc":"start job {date:YYYYMMDD, regs:[regN], stale, upload:bool}"},
 {"method":"GET","path":"/api/jobs/:id","desc":"job status + last 60 log lines"},
 {"method":"GET","path":"/api/options","desc":"available dates+regs (mysql, disk fallback)"},
 {"method":"GET","path":"/api/trends?days=N","desc":"daily aggregates, ours vs mysql"},
@@ -944,8 +935,7 @@ pub fn route(state: &Arc<State>, req: &Req) -> (u16, String) {
                 .unwrap_or_else(|| (1..=7).map(|i| format!("reg{i}")).collect());
             let stale = v["stale"].as_u64().unwrap_or(50) as usize;
             let upload = v["upload"].as_bool().unwrap_or(false);
-            let bruteforce = v["bruteforce"].as_bool().unwrap_or(false);
-            match start_job(state, &date, &regs, stale, upload, bruteforce) {
+            match start_job(state, &date, &regs, stale, upload) {
                 Ok(j) => (202, serde_json::json!({"job": j}).to_string()),
                 Err(e) => err(400, format!("{e:#}")),
             }
