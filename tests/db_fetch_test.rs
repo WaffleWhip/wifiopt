@@ -11,6 +11,8 @@ fn test_opts() -> Options {
         stale: 50,
         upload: false,
         table: String::new(),
+        bruteforce: false,
+        bruteforce_max_k: 4,
     }
 }
 

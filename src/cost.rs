@@ -21,6 +21,17 @@ pub const ADJ_FACTOR: f64 = 1.20;
 /// A move is reverted when the FINAL assignment prices it worse than staying.
 pub const ACCEPT_EPS: f64 = 0.0005;
 
+/// Upper bound on exhaustive combinations per cluster before falling back
+/// to coordinate descent for that cluster.
+pub const MAX_COMBOS: u64 = 20_000;
+
+#[derive(Debug, Default)]
+pub struct BruteStats {
+    pub groups: usize,
+    pub exhaustive: usize,
+    pub fallback: usize,
+}
+
 /// Final guard for one AP: keep the candidate only if the final assignment
 /// does not price it worse than the current channel beyond noise.
 /// Returns (channel, cost) actually reported.
@@ -257,4 +268,250 @@ pub fn optimize_band(
             }
         })
         .collect()
+}
+
+struct BfAp {
+    sn: String,
+    possible: Vec<i32>,
+    cur: i32,
+    /// (in-group member position or None, fixed channel, weight)
+    nb: Vec<(Option<usize>, i32, f64)>,
+}
+
+fn bf_cost(band: &str, own_ch: i32, nb: &[(Option<usize>, i32, f64)], combo: &[i32]) -> f64 {
+    let mut total = 0.0;
+    for &(pos, ch, w) in nb {
+        let nc = match pos {
+            Some(i) => combo[i],
+            None => ch,
+        };
+        let ov = if band == "2g" {
+            overlap_2g(own_ch, nc)
+        } else {
+            overlap_5g(own_ch, nc)
+        };
+        if ov <= 0.0 {
+            continue;
+        }
+        total += ov * if nc == own_ch { CO_FACTOR } else { ADJ_FACTOR } * w;
+    }
+    total
+}
+
+/// Joint per-cluster optimizer ("bruteforce").
+///
+/// Each interference cluster (a connected component: no managed radio outside
+/// it hears or is heard by a member, so the joint optimum is exact) is
+/// searched exhaustively over the product of member candidate channels.
+/// Lexicographic combo order + strict improvement = fully deterministic.
+///
+/// Groups larger than `max_k` members or with more than [`MAX_COMBOS`]
+/// combinations fall back to [`optimize_band`] on that subset (counted in
+/// stats). No per-AP acceptance veto here on purpose: a joint optimum may
+/// raise one member's individual cost while lowering the total; adoption
+/// itself requires beating the current joint total (joint acceptance).
+pub fn optimize_band_bruteforce(
+    rows: &[MemRow],
+    cluster_sns: &[Vec<String>],
+    stale: usize,
+    max_k: usize,
+    band: &str,
+) -> (Vec<OptimizeRow>, BruteStats) {
+    let mut stats = BruteStats::default();
+    let invalid_set: HashSet<&str> = HashSet::from(["00:00:00:00:00:00"]);
+
+    let mut own_set: HashSet<&str> = HashSet::new();
+    for r in rows {
+        for b in &r.own {
+            let s = b.trim();
+            if !s.is_empty() && !invalid_set.contains(s) {
+                own_set.insert(s);
+            }
+        }
+    }
+    let mut cid_of: HashMap<&str, i64> = HashMap::new();
+    for (i, sns) in cluster_sns.iter().enumerate() {
+        for sn in sns {
+            cid_of.insert(sn.as_str(), (i + 1) as i64);
+        }
+    }
+
+    // Group row indices: clustered by cid (first-appearance order), then
+    // unclustered rows each as their own singleton group. Skip empty-own
+    // rows exactly like the descent path (they produce no output row).
+    let mut order: Vec<usize> = Vec::new();
+    let mut by_cid: HashMap<i64, Vec<usize>> = HashMap::new();
+    for (idx, r) in rows.iter().enumerate() {
+        if r.own.is_empty() {
+            continue;
+        }
+        match cid_of.get(r.sn.as_str()).copied() {
+            Some(cid) => {
+                if !by_cid.contains_key(&cid) {
+                    order.push(idx);
+                }
+                by_cid.entry(cid).or_default().push(idx);
+            }
+            None => order.push(idx),
+        }
+    }
+    // Deterministic member order inside groups.
+    for v in by_cid.values_mut() {
+        v.sort_by(|&a, &b| rows[a].sn.cmp(&rows[b].sn));
+    }
+
+    let mut out: Vec<OptimizeRow> = Vec::new();
+    // Iterate groups in first-appearance order for deterministic logging;
+    // results are order-independent (no cross-group managed edges).
+    let mut seen_cid: HashSet<i64> = HashSet::new();
+    let mut groups: Vec<(Option<i64>, Vec<usize>)> = Vec::new();
+    for &idx in &order {
+        match cid_of.get(rows[idx].sn.as_str()).copied() {
+            Some(cid) => {
+                if seen_cid.insert(cid) {
+                    groups.push((Some(cid), by_cid[&cid].clone()));
+                }
+            }
+            None => groups.push((None, vec![idx])),
+        }
+    }
+    stats.groups = groups.len();
+
+    for (cid, members) in &groups {
+        // Build member working sets.
+        let mut maps: Vec<BfAp> = Vec::with_capacity(members.len());
+        let mut usable: Vec<usize> = Vec::new();
+        for &ri in members {
+            let r = &rows[ri];
+            let possible = possible_channels(r, band);
+            if possible.is_empty() {
+                continue;
+            }
+            usable.push(ri);
+            maps.push(BfAp {
+                sn: r.sn.clone(),
+                cur: r.own_channel.unwrap_or(possible[0]),
+                possible,
+                nb: Vec::new(),
+            });
+        }
+        if maps.is_empty() {
+            continue;
+        }
+        let mut bpos: HashMap<&str, usize> = HashMap::new();
+        for (pos, &ri) in usable.iter().enumerate() {
+            for b in &rows[ri].own {
+                bpos.insert(b.trim(), pos);
+            }
+        }
+        for (pos, bfap) in maps.iter_mut().enumerate() {
+            let r = &rows[usable[pos]];
+            let mut nb = Vec::with_capacity(r.neighbors.len());
+            for (bssid, ch, rssi) in &r.neighbors {
+                let s = bssid.trim();
+                if s.is_empty() || invalid_set.contains(s) || !band_cost_ok(*ch, band) {
+                    continue;
+                }
+                let w = rssi_factor(*rssi)
+                    * if own_set.contains(s) {
+                        OWN_GATEWAY
+                    } else {
+                        EXTERNAL
+                    };
+                nb.push((bpos.get(s).copied(), *ch, w));
+            }
+            bfap.nb = nb;
+        }
+
+        let exhaustive = maps.len() <= max_k.max(1)
+            && maps
+                .iter()
+                .map(|m| m.possible.len() as u64)
+                .fold(1u64, |a, b| a.saturating_mul(b))
+                <= MAX_COMBOS;
+        if !exhaustive {
+            stats.fallback += 1;
+            let sub: Vec<MemRow> = usable.iter().map(|&ri| rows[ri].clone()).collect();
+            let sub_sns = vec![sub.iter().map(|r| r.sn.clone()).collect::<Vec<_>>()];
+            let mut sub_rows = optimize_band(&sub, &sub_sns, stale, band);
+            for r in sub_rows.iter_mut() {
+                r.clusterid = *cid;
+            }
+            out.extend(sub_rows);
+            continue;
+        }
+        stats.exhaustive += 1;
+
+        // Current combo is adoptable only when every cur is a real candidate;
+        // otherwise the argmin is forced (same rule as the descent path).
+        let cur_combo: Option<Vec<i32>> = maps
+            .iter()
+            .map(|m| {
+                if m.possible.contains(&m.cur) {
+                    Some(m.cur)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let cur_total = cur_combo.as_ref().map(|c| {
+            maps.iter()
+                .enumerate()
+                .map(|(i, m)| bf_cost(band, c[i], &m.nb, c))
+                .sum::<f64>()
+        });
+        let mut best_total = cur_total.map(|t| t - ACCEPT_EPS).unwrap_or(f64::INFINITY);
+        let mut best_combo = cur_combo.clone().unwrap_or_else(|| {
+            maps.iter().map(|m| m.possible[0]).collect()
+        });
+
+        let lens: Vec<usize> = maps.iter().map(|m| m.possible.len()).collect();
+        let mut idx = vec![0usize; maps.len()];
+        loop {
+            let combo: Vec<i32> = idx
+                .iter()
+                .enumerate()
+                .map(|(i, &k)| maps[i].possible[k])
+                .collect();
+            let total: f64 = maps
+                .iter()
+                .enumerate()
+                .map(|(i, m)| bf_cost(band, combo[i], &m.nb, &combo))
+                .sum();
+            if total < best_total {
+                best_total = total;
+                best_combo = combo;
+            }
+            let mut j = 0;
+            while j < idx.len() {
+                idx[j] += 1;
+                if idx[j] < lens[j] {
+                    break;
+                }
+                idx[j] = 0;
+                j += 1;
+            }
+            if j == idx.len() {
+                break;
+            }
+        }
+
+        for (i, m) in maps.iter().enumerate() {
+            let cb = m.cur;
+            let ca = best_combo[i];
+            // Final costs under the adopted joint assignment.
+            let cb_cost = round3(bf_cost(band, cb, &m.nb, &best_combo));
+            let ca_cost = round3(bf_cost(band, ca, &m.nb, &best_combo));
+            out.push(OptimizeRow {
+                sn: m.sn.clone(),
+                clusterid: *cid,
+                ch_before: Some(cb),
+                cost_before: cb_cost,
+                ch_after: ca,
+                cost_after: ca_cost,
+                status: if ca == cb { "STAY".into() } else { "CHANGE".into() },
+            });
+        }
+    }
+    (out, stats)
 }
