@@ -8,8 +8,6 @@ fn test_opts() -> Options {
         out: "./out".to_string(),
         db_url: std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "mysql://127.0.0.1:3306/wifi_optimization".to_string()),
-        rssi_threshold: -85.0,
-        stay_delta: 0.05,
         stale: 50,
         upload: false,
         table: String::new(),

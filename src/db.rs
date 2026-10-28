@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use mysql::prelude::Queryable;
-use std::collections::HashMap;
 
 use crate::config::Options;
 use crate::discover::{parse, ApInfo};
@@ -15,15 +14,10 @@ pub struct DiscoverRow {
 }
 
 const DISCOVER_SQL: &str = "SELECT `CPE_Serial_Number`, `channel_ont`, `channel_ont5Ghz`, `json_config`, `json_neighbor` FROM `{table}`";
-const BSSID_SQL: &str = "SELECT `CPE_Serial_Number`, `bssid` FROM `list_sn_bssid`";
-const BSSID_NEW_SQL: &str = "SELECT `CPE_Serial_Number`, `bssid` FROM `list_sn_bssid_new`";
 
+/// Every statement the fetch path may issue. Guardrail: all must be SELECT.
 pub fn all_statements() -> Vec<String> {
-    vec![
-        DISCOVER_SQL.to_string(),
-        BSSID_SQL.to_string(),
-        BSSID_NEW_SQL.to_string(),
-    ]
+    vec![DISCOVER_SQL.to_string()]
 }
 
 pub fn with_retry<F, T>(mut f: F) -> Result<T>
@@ -107,20 +101,5 @@ pub fn stream_aps(opts: &Options, reg: &str, mut f: impl FnMut(ApInfo)) -> Resul
             }
         }
         Ok(n)
-    })
-}
-
-pub fn load_bssid_index(db_url: &str) -> Result<HashMap<String, String>> {
-    with_retry(|| {
-        let pool = mysql::Pool::new(db_url).context("db pool")?;
-        let mut conn = pool.get_conn().context("db conn")?;
-        let mut map = HashMap::new();
-        for sql in [BSSID_SQL, BSSID_NEW_SQL] {
-            let rows: Vec<(String, String)> = conn.query_map(sql, |(a, b)| (a, b))?;
-            for (serial, bssid) in rows {
-                map.insert(bssid.to_uppercase(), serial);
-            }
-        }
-        Ok(map)
     })
 }

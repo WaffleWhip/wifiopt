@@ -23,6 +23,7 @@ fn main() {
         jobs: Mutex::new(HashMap::new()),
         schedule: Mutex::new(sched),
         last_scheduled: Mutex::new(None),
+        file_cache: Mutex::new(HashMap::new()),
     });
     spawn_scheduler(Arc::clone(&state));
     let listener =

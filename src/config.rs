@@ -7,8 +7,6 @@ pub struct Options {
     pub regs: Vec<String>,
     pub out: String,
     pub db_url: String,
-    pub rssi_threshold: f32,
-    pub stay_delta: f64,
     pub stale: usize,
     /// Write results to wifi_optimize_<date>. Off by default (fetch-only).
     pub upload: bool,
@@ -27,10 +25,6 @@ struct Cli {
     out: String,
     #[arg(long, env = "DATABASE_URL", default_value = "mysql://127.0.0.1:3306/wifi_optimization")]
     db_url: String,
-    #[arg(long, default_value_t = -85.0)]
-    rssi_threshold: f32,
-    #[arg(long, default_value_t = 0.05)]
-    stay_delta: f64,
     #[arg(long, default_value_t = 50)]
     stale: usize,
     /// Upload results to MySQL wifi_optimize_<date> (default: fetch-only CSV).
@@ -67,8 +61,6 @@ fn from_cli(cli: Cli) -> Options {
         regs,
         out: cli.out,
         db_url: cli.db_url,
-        rssi_threshold: cli.rssi_threshold,
-        stay_delta: cli.stay_delta,
         stale: cli.stale,
         upload: cli.upload,
         table: cli.table,

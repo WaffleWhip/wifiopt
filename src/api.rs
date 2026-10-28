@@ -136,6 +136,7 @@ pub struct State {
     pub jobs: Mutex<HashMap<String, Job>>,
     pub schedule: Mutex<Schedule>,
     pub last_scheduled: Mutex<Option<ScheduledRun>>,
+    pub file_cache: Mutex<HashMap<String, FileCache>>,
 }
 
 fn all_regs() -> Vec<String> {
@@ -359,24 +360,104 @@ fn parse_csv_name(name: &str) -> Option<(String, String)> {
     Some((date.to_string(), reg.to_string()))
 }
 
-fn count_rows(path: &Path) -> Option<usize> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let lines: Vec<&str> = text.split('\n').collect();
-    if lines.len() <= 1 {
-        return Some(0);
+#[derive(Clone)]
+pub struct FileCache {
+    mtime: u64,
+    len: u64,
+    rows: usize,
+    agg: Agg,
+}
+
+fn file_key(meta: &std::fs::Metadata) -> Option<(u64, u64)> {
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some((mtime, meta.len()))
+}
+
+/// One streaming pass: row count + aggregates. Never loads the whole file,
+/// so /api/runs and /api/trends stay cheap with hundreds of 100MB CSVs.
+fn scan_csv(path: &Path) -> Option<(usize, Agg)> {
+    let f = std::fs::File::open(path).ok()?;
+    let mut r = std::io::BufReader::new(f);
+    let mut a = Agg::default();
+    let mut data_lines = 0usize;
+    use std::io::BufRead as _;
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if r.read_line(&mut line).ok()? == 0 {
+            break;
+        }
+        let t = line.trim_end();
+        if t.is_empty() || t.starts_with("reg,") {
+            continue;
+        }
+        data_lines += 1;
+        let v: Vec<&str> = t.split(',').collect();
+        if v.len() < 14 {
+            continue;
+        }
+        a.n += 1;
+        // header order: reg,sn,clusterid_2g,ch_before_2g,cost_before_2g,ch_after_2g,
+        // cost_after_2g,status_2g,clusterid_5g,ch_before_5g,cost_before_5g,
+        // ch_after_5g,cost_after_5g,status_5g,...
+        if let Some(x) = num(v[4]) {
+            a.cb2 += x;
+            a.c2 += 1;
+        }
+        if let Some(x) = num(v[6]) {
+            a.ca2 += x;
+        }
+        if let Some(x) = num(v[10]) {
+            a.cb5 += x;
+            a.c5 += 1;
+        }
+        if let Some(x) = num(v[12]) {
+            a.ca5 += x;
+        }
+        if v[7] == "CHANGE" {
+            a.ch2 += 1;
+        }
+        if v[13] == "CHANGE" {
+            a.ch5 += 1;
+        }
     }
-    let mut n = lines.len() - 1;
-    if lines.last().is_some_and(|l| l.is_empty()) {
-        n -= 1;
+    Some((data_lines, a))
+}
+
+/// mtime+len keyed cache: re-scan only when the file actually changed.
+fn cached_scan(state: &Arc<State>, path: &Path) -> Option<(usize, Agg)> {
+    let meta = std::fs::metadata(path).ok()?;
+    let (mtime, len) = file_key(&meta)?;
+    let key = path.to_string_lossy().to_string();
+    if let Some(hit) = state.file_cache.lock().unwrap().get(&key) {
+        if hit.mtime == mtime && hit.len == len {
+            return Some((hit.rows, hit.agg.clone()));
+        }
     }
-    Some(n)
+    let (rows, agg) = scan_csv(path)?;
+    state.file_cache.lock().unwrap().insert(
+        key,
+        FileCache {
+            mtime,
+            len,
+            rows,
+            agg: agg.clone(),
+        },
+    );
+    Some((rows, agg))
 }
 
 fn iso_of(m: std::time::SystemTime) -> String {
     chrono::DateTime::<chrono::Utc>::from(m).to_rfc3339()
 }
 
-fn list_runs(cfg: &Cfg) -> Vec<serde_json::Value> {
+fn list_runs(state: &Arc<State>) -> Vec<serde_json::Value> {
+    let cfg = &state.cfg;
     let mut out = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&cfg.out_dir) {
         for e in entries.flatten() {
@@ -391,9 +472,10 @@ fn list_runs(cfg: &Cfg) -> Vec<serde_json::Value> {
                         )
                     })
                     .unwrap_or((0, String::new()));
+                let rows = cached_scan(state, &e.path()).map(|(n, _)| n);
                 out.push(serde_json::json!({
                     "date": date, "reg": reg,
-                    "rows": count_rows(&e.path()),
+                    "rows": rows,
                     "bytes": bytes, "mtime": mtime,
                 }));
             }
@@ -427,7 +509,7 @@ fn day_list(days: usize) -> Vec<String> {
         .collect()
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Agg {
     n: u64,
     cb2: f64,
@@ -448,44 +530,6 @@ fn num(s: &str) -> Option<f64> {
     }
 }
 
-fn agg_csv(path: &Path) -> Agg {
-    let mut a = Agg::default();
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return a;
-    };
-    for line in text.split('\n') {
-        let v: Vec<&str> = line.split(',').collect();
-        if v.len() < 14 || v[0] == "reg" || line.trim().is_empty() {
-            continue;
-        }
-        a.n += 1;
-        // header order: reg,sn,clusterid_2g,ch_before_2g,cost_before_2g,ch_after_2g,
-        // cost_after_2g,status_2g,clusterid_5g,ch_before_5g,cost_before_5g,
-        // ch_after_5g,cost_after_5g,status_5g,...
-        if let Some(x) = num(v[4]) {
-            a.cb2 += x;
-            a.c2 += 1;
-        }
-        if let Some(x) = num(v[6]) {
-            a.ca2 += x;
-        }
-        if let Some(x) = num(v[10]) {
-            a.cb5 += x;
-            a.c5 += 1;
-        }
-        if let Some(x) = num(v[12]) {
-            a.ca5 += x;
-        }
-        if v[7] == "CHANGE" {
-            a.ch2 += 1;
-        }
-        if v[13] == "CHANGE" {
-            a.ch5 += 1;
-        }
-    }
-    a
-}
-
 fn agg_json(date: &str, a: &Agg) -> serde_json::Value {
     let c2 = a.c2.max(1) as f64;
     let c5 = a.c5.max(1) as f64;
@@ -497,7 +541,8 @@ fn agg_json(date: &str, a: &Agg) -> serde_json::Value {
     })
 }
 
-fn trends_ours(cfg: &Cfg, dates: &[String]) -> Vec<serde_json::Value> {
+fn trends_ours(state: &Arc<State>, dates: &[String]) -> Vec<serde_json::Value> {
+    let cfg = &state.cfg;
     let mut by_date: HashMap<String, Agg> = HashMap::new();
     if let Ok(entries) = std::fs::read_dir(&cfg.out_dir) {
         for e in entries.flatten() {
@@ -506,7 +551,9 @@ fn trends_ours(cfg: &Cfg, dates: &[String]) -> Vec<serde_json::Value> {
                 if !dates.contains(&date) {
                     continue;
                 }
-                let a = agg_csv(&e.path());
+                let Some((_, a)) = cached_scan(state, &e.path()) else {
+                    continue;
+                };
                 let t = by_date.entry(date).or_default();
                 t.n += a.n;
                 t.cb2 += a.cb2;
@@ -693,7 +740,7 @@ fn health(state: &Arc<State>) -> serde_json::Value {
             )
         })
         .unwrap_or((0, String::new()));
-    let runs = list_runs(cfg);
+    let runs = list_runs(state);
     let csv_count = runs.len();
     let latest_date = runs.first().and_then(|r| r["date"].as_str()).unwrap_or("");
     let total_bytes: u64 = runs.iter().filter_map(|r| r["bytes"].as_u64()).sum();
@@ -869,7 +916,7 @@ pub fn route(state: &Arc<State>, req: &Req) -> (u16, String) {
         ("GET", []) => (200, INDEX.to_string()),
         ("GET", ["api", "health"]) => ok(&health(state)),
         ("GET", ["api", "runs"]) => ok(&serde_json::json!({
-            "runs": list_runs(cfg),
+            "runs": list_runs(state),
             "summary": read_summary(cfg),
             "jobs": list_jobs(state),
         })),
@@ -924,7 +971,7 @@ pub fn route(state: &Arc<State>, req: &Req) -> (u16, String) {
                 }
             }
             if !from_mysql {
-                for r in list_runs(cfg) {
+                for r in list_runs(state) {
                     if let (Some(d), Some(g)) = (r["date"].as_str(), r["reg"].as_str()) {
                         by_date.entry(d.to_string()).or_default().push(g.to_string());
                     }
@@ -949,7 +996,7 @@ pub fn route(state: &Arc<State>, req: &Req) -> (u16, String) {
                 .unwrap_or(14usize);
             let dates = day_list(days);
             ok(&serde_json::json!({
-                "ours": trends_ours(cfg, &dates),
+                "ours": trends_ours(state, &dates),
                 "mysql": trends_mysql(&dates),
             }))
         }
@@ -969,7 +1016,10 @@ pub fn route(state: &Arc<State>, req: &Req) -> (u16, String) {
                 ours.insert(
                     reg.to_string(),
                     if p.exists() {
-                        agg_json(&date, &agg_csv(&p))
+                        match cached_scan(state, &p) {
+                            Some((_, a)) => agg_json(&date, &a),
+                            None => serde_json::Value::Null,
+                        }
                     } else {
                         serde_json::Value::Null
                     },
