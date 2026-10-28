@@ -1,5 +1,6 @@
 use wifiopt::cost::{
-    band_cost_ok, overlap_2g, overlap_5g, optimize_band, possible_channels, rssi_factor,
+    accept_move, band_cost_ok, overlap_2g, overlap_5g, optimize_band, possible_channels,
+    rssi_factor,
 };
 use wifiopt::graph::MemRow;
 
@@ -76,4 +77,48 @@ fn band_cost_ok_filters() {
     assert!(band_cost_ok(14, "2g"));
     assert!(band_cost_ok(149, "5g"));
     assert!(!band_cost_ok(52, "5g"));
+}
+
+#[test]
+fn accept_move_reverts_final_regression() {
+    // worse beyond noise -> stay
+    assert_eq!(accept_move(1, 1.0, 6, 1.5), (1, 1.0));
+    assert_eq!(accept_move(1, 1.0, 6, 1.0006), (1, 1.0));
+    // better or within noise -> keep
+    assert_eq!(accept_move(1, 1.0, 6, 0.5), (6, 0.5));
+    assert_eq!(accept_move(1, 1.0, 6, 1.0005), (6, 1.0005));
+    // no move -> untouched
+    assert_eq!(accept_move(6, 0.5, 6, 0.5), (6, 0.5));
+}
+
+#[test]
+fn optimize_never_reports_worse_change() {
+    // mutual interferers: sequential moves can strand one AP worse;
+    // the final guard must convert those into STAY.
+    let a = mem(
+        "A",
+        vec!["aa:01"],
+        Some(6),
+        vec![1, 6, 11],
+        vec![("aa:02", 6, -50)],
+    );
+    let b = mem(
+        "B",
+        vec!["aa:02"],
+        Some(6),
+        vec![1, 6, 11],
+        vec![("aa:01", 6, -50)],
+    );
+    let out = optimize_band(&[a, b], &[], 50, "2g");
+    assert_eq!(out.len(), 2);
+    for r in &out {
+        if r.status == "CHANGE" {
+            assert!(
+                r.cost_after <= r.cost_before + 0.0005,
+                "worse CHANGE slipped through: {r:?}"
+            );
+        } else {
+            assert_eq!(r.ch_after, r.ch_before.unwrap());
+        }
+    }
 }

@@ -17,6 +17,21 @@ pub const EXTERNAL: f64 = 1.00;
 pub const CO_FACTOR: f64 = 1.00;
 pub const ADJ_FACTOR: f64 = 1.20;
 
+/// Move-acceptance epsilon (same scale as the descent decision rule).
+/// A move is reverted when the FINAL assignment prices it worse than staying.
+pub const ACCEPT_EPS: f64 = 0.0005;
+
+/// Final guard for one AP: keep the candidate only if the final assignment
+/// does not price it worse than the current channel beyond noise.
+/// Returns (channel, cost) actually reported.
+pub fn accept_move(cur: i32, cur_cost: f64, cand: i32, cand_cost: f64) -> (i32, f64) {
+    if cand != cur && cand_cost > cur_cost + ACCEPT_EPS {
+        (cur, cur_cost)
+    } else {
+        (cand, cand_cost)
+    }
+}
+
 pub fn band_cost_ok(ch: i32, band: &str) -> bool {
     if band == "2g" {
         (1..=14).contains(&ch)
@@ -203,7 +218,7 @@ pub fn optimize_band(
                     best_ch = cand;
                 }
             }
-            if !ap.possible.contains(&cur) || cost_cur - best_c > 0.0005 {
+            if !ap.possible.contains(&cur) || cost_cur - best_c > ACCEPT_EPS {
                 if best_ch != cur {
                     changed = true;
                 }
@@ -223,15 +238,21 @@ pub fn optimize_band(
     aps.into_iter()
         .enumerate()
         .map(|(i, ap)| {
-            let ca = assigned[i];
             let cb = ap.cur_ch;
+            let cb_cost = round3(cost_for(cb, &ap.neighbors, band));
+            let (ca, ca_cost) = accept_move(
+                cb,
+                cb_cost,
+                assigned[i],
+                round3(cost_for(assigned[i], &ap.neighbors, band)),
+            );
             OptimizeRow {
                 sn: ap.sn,
                 clusterid: ap.cluster_id,
                 ch_before: Some(cb),
-                cost_before: round3(cost_for(cb, &ap.neighbors, band)),
+                cost_before: cb_cost,
                 ch_after: ca,
-                cost_after: round3(cost_for(ca, &ap.neighbors, band)),
+                cost_after: ca_cost,
                 status: if ca == cb { "STAY".into() } else { "CHANGE".into() },
             }
         })
