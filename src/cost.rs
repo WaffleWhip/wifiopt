@@ -418,7 +418,12 @@ pub fn optimize_band_bruteforce(
                     } else {
                         EXTERNAL
                     };
-                nb.push((bpos.get(s).copied(), *ch, w));
+                // Self/sibling radios of the SAME AP stay priced at their
+                // scanned channel, exactly like the descent path prices them
+                // (stale). Resolving them via combo would force a constant
+                // co-channel term that descent never sees, breaking parity.
+                let slot = bpos.get(s).copied().filter(|&p| p != pos);
+                nb.push((slot, *ch, w));
             }
             bfap.nb = nb;
         }

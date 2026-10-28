@@ -113,8 +113,26 @@ fn singleton_matches_descent_exactly() {
 }
 
 #[test]
-fn oversize_group_falls_back_with_invariant() {
-    let sns: Vec<String> = (0..5).map(|i| format!("M{i}")).collect();
+fn self_radio_entries_price_like_descent() {
+    // A hears its own sibling radio (same AP, slot 6) plus one external.
+    // The sibling must stay priced at its scanned channel (descent parity),
+    // never forced co-channel via combo.
+    let m = mem(
+        "S",
+        vec!["aa:05", "aa:06"],
+        Some(36),
+        vec![36, 48],
+        vec![("aa:06", 149, -40), ("ext", 36, -70)],
+    );
+    let (bf, _) = optimize_band_bruteforce(&[m.clone()], &[], 50, 4, "5g");
+    let desc = optimize_band(&[m], &[], 50, "5g");
+    assert_eq!(bf[0].ch_after, desc[0].ch_after);
+    assert_eq!(bf[0].status, desc[0].status);
+    assert!((bf[0].cost_after - desc[0].cost_after).abs() < 1e-9);
+}
+
+#[test]
+fn oversize_group_falls_back_with_invariant() {    let sns: Vec<String> = (0..5).map(|i| format!("M{i}")).collect();
     let bss: Vec<String> = (0..5).map(|i| format!("bb:{i:02}")).collect();
     let rows: Vec<MemRow> = sns
         .iter()
