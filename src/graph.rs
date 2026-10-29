@@ -55,20 +55,28 @@ pub fn band_ok(ch: i32, band: &str) -> bool {
 fn mem_rows(aps: &[ApInfo], band: &str) -> Vec<MemRow> {
     aps.iter()
         .map(|ap| {
-            let (radios, neighbors) = if band == "2g" {
-                (&ap.radios_2g, &ap.neighbors_2g)
+            let (radios, neighbors, col) = if band == "2g" {
+                (&ap.radios_2g, &ap.neighbors_2g, ap.col_2g)
             } else {
-                (&ap.radios_5g, &ap.neighbors_5g)
+                (&ap.radios_5g, &ap.neighbors_5g, ap.col_5g)
             };
             // Radios arrive sorted by numeric slot. The primary is the lowest
             // slot with a known in-band channel (the radio execution targets).
             // Radios with empty/out-of-band channels (guest/virtual slots) are
             // skipped so `before` never reads a radio execution never touches.
+            // Last resort is the discover summary column: for ghost json
+            // (slots present but channel-less) the column still carries the
+            // device's real channel, which beats the possible[0] fallback.
             let primary = radios
                 .iter()
-                .find(|r| r.channel.is_some_and(|c| band_ok(c as i32, band)))
-                .or(radios.first());
-            let first = primary;
+                .find(|r| r.channel.is_some_and(|c| band_ok(c as i32, band)));
+            let first = primary.or(radios.first());
+            let own_channel = primary
+                .and_then(|r| r.channel)
+                .map(|c| c as i32)
+                .or_else(|| {
+                    col.filter(|c| band_ok(*c as i32, band)).map(|c| c as i32)
+                });
             MemRow {
                 sn: ap.serial.clone(),
                 own: radios.iter().map(|r| r.bssid.clone()).collect(),
@@ -76,7 +84,7 @@ fn mem_rows(aps: &[ApInfo], band: &str) -> Vec<MemRow> {
                     .iter()
                     .map(|n| (n.bssid.clone(), n.channel as i32, n.signal))
                     .collect(),
-                own_channel: first.and_then(|r| r.channel.map(|c| c as i32)),
+                own_channel,
                 possible_channels: first
                     .map(|r| r.possible.iter().map(|&c| c as i32).collect())
                     .unwrap_or_default(),

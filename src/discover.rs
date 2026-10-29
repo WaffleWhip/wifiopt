@@ -29,6 +29,10 @@ pub struct ApInfo {
     pub radios_5g: Vec<OwnedRadio>,
     pub neighbors_2g: Vec<Neighbor>,
     pub neighbors_5g: Vec<Neighbor>,
+    /// Summary columns from discover (last-resort `before` when no radio
+    /// carries a known in-band channel, e.g. ghost json with empty slots).
+    pub col_2g: Option<u8>,
+    pub col_5g: Option<u8>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -218,6 +222,8 @@ pub fn parse(row: &DiscoverRow) -> Result<ApInfo> {
         radios_5g: radios_5g_out,
         neighbors_2g,
         neighbors_5g,
+        col_2g: row.channel_ont,
+        col_5g: row.channel_ont5g,
     })
 }
 

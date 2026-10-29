@@ -85,6 +85,36 @@ fn single_radio_is_not_divergent() {
 }
 
 #[test]
+fn ghost_json_falls_back_to_discover_column() {
+    // FHTTC0C7637F shape: column says 48, json 5G slots are channel-less.
+    let r = DiscoverRow {
+        serial: "GHOST".to_string(),
+        channel_ont: Some(1),
+        channel_ont5g: Some(48),
+        json_config: r#"{"5":{"ssid_enable":false,"channel":"","bssid":"","possible_channel":""},"6":{"ssid_enable":true,"channel":"","bssid":"aa:bb:cc:dd:ee:06","possible_channel":"36,40,44,48"}}"#.to_string(),
+        json_neighbor: "{}".to_string(),
+    };
+    let ap = discover::parse(&r).unwrap();
+    assert_eq!(ap.radios_5g.len(), 1);
+    let mem = graph::mem_rows_for(&[ap], "5g");
+    assert_eq!(mem[0].own_channel, Some(48));
+}
+
+#[test]
+fn invalid_column_still_falls_through() {
+    let r = DiscoverRow {
+        serial: "GHOST2".to_string(),
+        channel_ont: None,
+        channel_ont5g: Some(7),
+        json_config: r#"{"6":{"ssid_enable":true,"channel":"","bssid":"aa:bb:cc:dd:ee:06","possible_channel":"36,40,44,48"}}"#.to_string(),
+        json_neighbor: "{}".to_string(),
+    };
+    let ap = discover::parse(&r).unwrap();
+    let mem = graph::mem_rows_for(&[ap], "5g");
+    assert_eq!(mem[0].own_channel, None);
+}
+
+#[test]
 fn no_enabled_radios_gives_none_channel() {
     let ap = discover::parse(&row(
         "{\"5\":{\"ssid_enable\":false,\"channel\":48,\"bssid\":\"aa:bb:cc:dd:ee:05\",\"possible_channel\":\"36,40,44,48\"}}",
