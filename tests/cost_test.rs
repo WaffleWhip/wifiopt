@@ -82,13 +82,21 @@ fn band_cost_ok_filters() {
 #[test]
 fn accept_move_reverts_final_regression() {
     // worse beyond noise -> stay
-    assert_eq!(accept_move(1, 1.0, 6, 1.5), (1, 1.0));
-    assert_eq!(accept_move(1, 1.0, 6, 1.0006), (1, 1.0));
+    assert_eq!(accept_move(1, 1.0, 6, 1.5, true), (1, 1.0));
+    assert_eq!(accept_move(1, 1.0, 6, 1.0006, true), (1, 1.0));
     // better or within noise -> keep
-    assert_eq!(accept_move(1, 1.0, 6, 0.5), (6, 0.5));
-    assert_eq!(accept_move(1, 1.0, 6, 1.0005), (6, 1.0005));
+    assert_eq!(accept_move(1, 1.0, 6, 0.5, true), (6, 0.5));
+    assert_eq!(accept_move(1, 1.0, 6, 1.0005, true), (6, 1.0005));
     // no move -> untouched
-    assert_eq!(accept_move(6, 0.5, 6, 0.5), (6, 0.5));
+    assert_eq!(accept_move(6, 0.5, 6, 0.5, true), (6, 0.5));
+}
+
+#[test]
+fn accept_move_never_keeps_offplan_channel() {
+    // non-plan 2.4G channel (5) must canonicalize even when pricier
+    assert_eq!(accept_move(5, 0.045, 1, 0.9, false), (1, 0.9));
+    // DFS 5G channel (56) must leave DFS even when pricier
+    assert_eq!(accept_move(56, 0.21, 36, 0.8, false), (36, 0.8));
 }
 
 #[test]

@@ -34,8 +34,22 @@ pub struct BruteStats {
 
 /// Final guard for one AP: keep the candidate only if the final assignment
 /// does not price it worse than the current channel beyond noise.
+///
+/// `cur_legal` = current channel is one of the AP's planned candidates.
+/// When it is NOT (non-plan 2.4G channel such as 5, or a DFS 5G channel),
+/// the move is never vetoed: leaving the device off-plan is worse than a
+/// small local cost increase, and the plan channel is what executors apply.
 /// Returns (channel, cost) actually reported.
-pub fn accept_move(cur: i32, cur_cost: f64, cand: i32, cand_cost: f64) -> (i32, f64) {
+pub fn accept_move(
+    cur: i32,
+    cur_cost: f64,
+    cand: i32,
+    cand_cost: f64,
+    cur_legal: bool,
+) -> (i32, f64) {
+    if !cur_legal {
+        return (cand, cand_cost);
+    }
     if cand != cur && cand_cost > cur_cost + ACCEPT_EPS {
         (cur, cur_cost)
     } else {
@@ -256,6 +270,7 @@ pub fn optimize_band(
                 cb_cost,
                 assigned[i],
                 round3(cost_for(assigned[i], &ap.neighbors, band)),
+                ap.possible.contains(&cb),
             );
             OptimizeRow {
                 sn: ap.sn,
