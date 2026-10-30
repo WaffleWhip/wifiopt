@@ -491,6 +491,10 @@ pub fn optimize_band_bruteforce(
         let mut best_combo = cur_combo.clone().unwrap_or_else(|| {
             maps.iter().map(|m| m.possible[0]).collect()
         });
+        let dbg = std::env::var("WIFIOPT_DEBUG_CID")
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok())
+            .filter(|v| cid == &Some(*v));
 
         let lens: Vec<usize> = maps.iter().map(|m| m.possible.len()).collect();
         let mut idx = vec![0usize; maps.len()];
@@ -520,6 +524,33 @@ pub fn optimize_band_bruteforce(
             }
             if j == idx.len() {
                 break;
+            }
+        }
+
+        if dbg.is_some() {
+            let cur_t: f64 = maps
+                .iter()
+                .enumerate()
+                .map(|(i, m)| bf_cost(band, before_combo[i], &m.nb, &before_combo))
+                .sum();
+            let best_t: f64 = maps
+                .iter()
+                .enumerate()
+                .map(|(i, m)| bf_cost(band, best_combo[i], &m.nb, &best_combo))
+                .sum();
+            let cur_ok = cur_combo.is_some();
+            eprintln!(
+                "[dbg cid={cid:?} band={band}] cur_ok={cur_ok} cur_total={cur_t:.6} best_total={best_t:.6}"
+            );
+            for (i, m) in maps.iter().enumerate() {
+                eprintln!(
+                    "  {} cur={} poss={:?} -> best={} nb_len={}",
+                    m.sn,
+                    m.cur,
+                    m.possible,
+                    best_combo[i],
+                    m.nb.len()
+                );
             }
         }
 
