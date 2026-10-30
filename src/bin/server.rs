@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 use wifiopt::api::{
     load_cfg, load_schedule, read_req, respond, route, spawn_scheduler, State,
 };
-
 fn main() {
     let cfg = load_cfg();
     let sched = load_schedule(&cfg);
@@ -26,6 +25,7 @@ fn main() {
         file_cache: Mutex::new(HashMap::new()),
     });
     spawn_scheduler(Arc::clone(&state));
+    wifiopt::api::recover_interrupted(&state);
     let listener =
         TcpListener::bind(format!("0.0.0.0:{}", state.cfg.port)).expect("bind api port");
     for stream in listener.incoming() {

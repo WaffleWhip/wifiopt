@@ -118,13 +118,13 @@ fn mysql_conn() -> Result<mysql::PooledConn> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Job {
-    id: String,
-    date: String,
-    regs: Vec<String>,
-    stale: usize,
+    pub id: String,
+    pub date: String,
+    pub regs: Vec<String>,
+    pub stale: usize,
     #[serde(default)]
-    upload: bool,
-    status: String, // running | done | failed
+    pub upload: bool,
+    pub status: String, // running | done | failed
     #[serde(rename = "startedAt")]
     started_at: String,
     #[serde(rename = "finishedAt")]
@@ -233,11 +233,40 @@ fn list_jobs(state: &Arc<State>) -> Vec<Job> {
     out
 }
 
-fn get_job(state: &Arc<State>, id: &str) -> Option<Job> {
+pub fn get_job(state: &Arc<State>, id: &str) -> Option<Job> {
     if let Some(j) = state.jobs.lock().unwrap().get(id) {
         return Some(j.clone());
     }
     read_job_file(&state.cfg, id)
+}
+
+/// A job left in `running` state means the process died mid-run (crash,
+/// reboot, kill). Mark it failed once at startup so the concurrency guard
+/// does not block every future run.
+pub fn recover_interrupted(state: &Arc<State>) {
+    let mut jobs = state.jobs.lock().unwrap();
+    if let Ok(entries) = std::fs::read_dir(jobs_dir(&state.cfg)) {
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".json") {
+                continue;
+            }
+            let Ok(s) = std::fs::read_to_string(e.path()) else {
+                continue;
+            };
+            let Ok(j) = serde_json::from_str::<Job>(&s) else {
+                continue;
+            };
+            if j.status == "running" {
+                let mut fixed = j.clone();
+                fixed.status = "failed".to_string();
+                fixed.finished_at = Some(chrono::Utc::now().to_rfc3339());
+                persist_job(&state.cfg, &fixed);
+                jobs.insert(fixed.id.clone(), fixed);
+                println!("[recovery] job {} marked failed (interrupted)", j.id);
+            }
+        }
+    }
 }
 
 fn valid_date(s: &str) -> bool {
@@ -262,6 +291,11 @@ pub fn start_job(
     }
     if regs.is_empty() || !regs.iter().all(|r| valid_reg(r)) {
         anyhow::bail!("bad regs");
+    }
+    // One optimizer at a time: concurrent runs would race on the same CSV
+    // files and on the upload table (truncate + insert interleaving).
+    if list_jobs(state).iter().any(|j| j.status == "running") {
+        anyhow::bail!("another job is running");
     }
     let id = format!(
         "{date}-{}",
