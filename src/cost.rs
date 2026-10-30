@@ -474,13 +474,20 @@ pub fn optimize_band_bruteforce(
                 }
             })
             .collect();
-        let cur_total = cur_combo.as_ref().map(|c| {
-            maps.iter()
+        // Baseline is always the real current state (even for off-plan
+        // channels), so the reported before/after pair is comparable.
+        let before_combo: Vec<i32> = maps.iter().map(|m| m.cur).collect();
+        // Off-plan currents are canonicalized by force: no baseline to beat.
+        let mut best_total = if cur_combo.is_some() {
+            let t: f64 = maps
+                .iter()
                 .enumerate()
-                .map(|(i, m)| bf_cost(band, c[i], &m.nb, c))
-                .sum::<f64>()
-        });
-        let mut best_total = cur_total.map(|t| t - ACCEPT_EPS).unwrap_or(f64::INFINITY);
+                .map(|(i, m)| bf_cost(band, before_combo[i], &m.nb, &before_combo))
+                .sum();
+            t - ACCEPT_EPS
+        } else {
+            f64::INFINITY
+        };
         let mut best_combo = cur_combo.clone().unwrap_or_else(|| {
             maps.iter().map(|m| m.possible[0]).collect()
         });
@@ -519,8 +526,13 @@ pub fn optimize_band_bruteforce(
         for (i, m) in maps.iter().enumerate() {
             let cb = m.cur;
             let ca = best_combo[i];
-            // Final costs under the adopted joint assignment.
-            let cb_cost = round3(bf_cost(band, cb, &m.nb, &best_combo));
+            // Fair comparison, both sides "real":
+            //   before = current channel priced against neighbors' CURRENT
+            //            channels (the scanned baseline, same convention as
+            //            the descent path),
+            //   after  = planned channel priced against neighbors' PLANNED
+            //            channels (the projected outcome).
+            let cb_cost = round3(bf_cost(band, cb, &m.nb, &before_combo));
             let ca_cost = round3(bf_cost(band, ca, &m.nb, &best_combo));
             out.push(OptimizeRow {
                 sn: m.sn.clone(),

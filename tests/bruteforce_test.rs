@@ -132,6 +132,23 @@ fn self_radio_entries_price_like_descent() {
 }
 
 #[test]
+fn reported_before_is_scanned_baseline_and_cluster_improves() {
+    // Cluster of two legal APs: the reported before/after must be comparable
+    // (before priced against current neighbours, after against planned ones).
+    let (rows, clusters) = pair_fixture();
+    let (bf, _) = optimize_band_bruteforce(&rows, &clusters, 50, 4, "5g");
+    let before: f64 = bf.iter().map(|r| r.cost_before).sum();
+    let after: f64 = bf.iter().map(|r| r.cost_after).sum();
+    assert!(
+        after < before,
+        "joint optimum must reduce the cluster total: before={before} after={after}"
+    );
+    // Before is the scanned baseline: A scans B on 36 and ext1 on 48.
+    let a = bf.iter().find(|r| r.sn == "A").unwrap();
+    assert_eq!(a.ch_before, Some(36));
+}
+
+#[test]
 fn oversize_group_falls_back_with_invariant() {    let sns: Vec<String> = (0..5).map(|i| format!("M{i}")).collect();
     let bss: Vec<String> = (0..5).map(|i| format!("bb:{i:02}")).collect();
     let rows: Vec<MemRow> = sns
