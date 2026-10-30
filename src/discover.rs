@@ -178,9 +178,15 @@ pub fn parse(row: &DiscoverRow) -> Result<ApInfo> {
         if slot == 0 {
             continue;
         }
-        if (1..=4).contains(&slot) {
+        // Band by slot AND channel. Huawei HG8145V5 / HG8245W5 put a second
+        // 2.4G SSID on slot 6 (same physical radio as slot 1: identical
+        // channel in 29,364 of 29,379 cases). Slot alone would file it as a
+        // 5G radio and drop it from the 2G graph, so a >=5 slot carrying a
+        // 2.4G channel is treated as a 2.4G radio.
+        let is_24_ch = radio.channel.is_some_and(|c| (1..=13).contains(&c));
+        if slot <= 4 || is_24_ch {
             radios_2g.push((slot, radio));
-        } else if slot >= 5 {
+        } else {
             radios_5g.push((slot, radio));
         }
     }

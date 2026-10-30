@@ -79,6 +79,38 @@ fn slots_above_eight_still_parse() {
 }
 
 #[test]
+fn huawei_slot6_24g_ssid_counts_as_2g() {
+    // HG8145V5 shape: slot 1 and slot 6 are the same 2.4G radio (ch 11),
+    // slot 5 is the 5G radio. Slot 6 must NOT be filed as 5G.
+    let json = format!(
+        "{{{},{},{}}}",
+        cfg2(1, "11"),
+        cfg5(5, "149"),
+        cfg2(6, "11"),
+    );
+    let ap = discover::parse(&row(&json)).unwrap();
+    assert_eq!(ap.radios_2g.len(), 2);
+    assert_eq!(ap.radios_5g.len(), 1);
+    assert_eq!(ap.radios_5g[0].slot, 5);
+    let mem2 = graph::mem_rows_for(&[ap], "2g");
+    assert_eq!(mem2[0].own_channel, Some(11));
+    assert_eq!(mem2[0].own.len(), 2);
+}
+
+#[test]
+fn slot6_24g_rescues_device_without_slots_1_4() {
+    // 86 devices in reg2 (29 Oct) have no 1-4 slot enabled but a 2.4G
+    // channel on slot 6: they must still appear in the 2G graph.
+    let json = format!("{{{},{}}}", cfg5(5, "149"), cfg2(6, "6"));
+    let ap = discover::parse(&row(&json)).unwrap();
+    assert!(ap.radios_2g.len() == 1);
+    assert_eq!(ap.radios_2g[0].slot, 6);
+    let mem = graph::mem_rows_for(&[ap], "2g");
+    assert_eq!(mem[0].own_channel, Some(6));
+    assert_eq!(mem[0].own.len(), 1);
+}
+
+#[test]
 fn primary_is_lowest_slot_regardless_of_json_key_order() {
     // "6" written before "5": old HashMap code could read either radio.
     let ap = discover::parse(&row(&format!(
@@ -123,15 +155,20 @@ fn empty_channel_primary_falls_through_to_next_valid() {
 
 #[test]
 fn out_of_band_channel_on_lowest_slot_is_skipped() {
-    // 48575443F9327CAE shape: slot 6 reports 2G channel 11.
+    // 48575443F9327CAE shape: slot 5 = 48 (5G), slot 6 reports a 2.4G
+    // channel (11) -> slot 6 belongs to the 2G graph, not 5G.
     let ap = discover::parse(&row(&format!(
         "{{{},{}}}",
         "\"5\":{\"ssid_enable\":true,\"channel\":48,\"bssid\":\"aa:bb:cc:dd:ee:05\",\"possible_channel\":\"36,40,44,48\"}",
         "\"6\":{\"ssid_enable\":true,\"channel\":11,\"bssid\":\"aa:bb:cc:dd:ee:06\",\"possible_channel\":\"1,2,3,4,5,6,7,8,9,10,11,12,13\"}"
     )))
     .unwrap();
+    assert_eq!(ap.radios_2g.len(), 1);
+    assert_eq!(ap.radios_2g[0].slot, 6);
+    assert_eq!(ap.radios_5g.len(), 1);
+    assert_eq!(ap.radios_5g[0].slot, 5);
     assert!(!discover::divergent_radios(&ap, "2g"));
-    assert!(discover::divergent_radios(&ap, "5g"));
+    assert!(!discover::divergent_radios(&ap, "5g"));
     let mem = graph::mem_rows_for(&[ap], "5g");
     assert_eq!(mem[0].own_channel, Some(48));
 }
