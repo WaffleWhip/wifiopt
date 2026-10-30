@@ -17,6 +17,67 @@ fn cfg5(slot: u8, channel: &str) -> String {
     )
 }
 
+fn cfg2(slot: u8, channel: &str) -> String {
+    format!(
+        "\"{slot}\":{{\"ssid_enable\":true,\"channel\":{channel},\"bssid\":\"aa:bb:cc:dd:ee:{slot:02x}\",\"possible_channel\":\"1,6,11\"}}"
+    )
+}
+
+#[test]
+fn eight_slots_split_four_and_four() {
+    // Standard ONT layout: 1-4 = 2.4G, 5-8 = 5G, all enabled.
+    let json = format!(
+        "{{{},{},{},{},{},{},{},{}}}",
+        cfg2(1, "1"),
+        cfg2(2, "1"),
+        cfg2(3, "\"\""),
+        cfg2(4, "\"\""),
+        cfg5(5, "48"),
+        cfg5(6, "\"\""),
+        cfg5(7, "\"\""),
+        cfg5(8, "\"\""),
+    );
+    let ap = discover::parse(&row(&json)).unwrap();
+    assert_eq!(ap.radios_2g.len(), 4);
+    assert_eq!(ap.radios_5g.len(), 4);
+    assert_eq!(ap.radios_5g[0].slot, 5);
+    assert_eq!(ap.radios_5g[3].slot, 8);
+    let mem2 = graph::mem_rows_for(&[ap.clone()], "2g");
+    let mem5 = graph::mem_rows_for(&[ap], "5g");
+    assert_eq!(mem2[0].own_channel, Some(1));
+    assert_eq!(mem5[0].own_channel, Some(48));
+    assert_eq!(mem2[0].own.len(), 4);
+    assert_eq!(mem5[0].own.len(), 4);
+}
+
+#[test]
+fn eight_slots_only_lowest_enabled_5g_drives_before() {
+    // Slots 6-8 enabled but channel-less: slot 5 must win.
+    let json = format!(
+        "{{{},{},{},{}}}",
+        cfg5(5, "149"),
+        cfg5(6, "\"\""),
+        cfg5(7, "\"\""),
+        cfg5(8, "\"\""),
+    );
+    let ap = discover::parse(&row(&json)).unwrap();
+    let mem = graph::mem_rows_for(&[ap], "5g");
+    assert_eq!(mem[0].own_channel, Some(149));
+}
+
+#[test]
+fn slots_above_eight_still_parse() {
+    let ap = discover::parse(&row(&format!(
+        "{{{},{}}}",
+        cfg5(9, "153"),
+        cfg5(10, "157")
+    )))
+    .unwrap();
+    assert_eq!(ap.radios_5g.len(), 2);
+    assert_eq!(ap.radios_5g[0].slot, 9);
+    assert_eq!(ap.radios_5g[1].slot, 10);
+}
+
 #[test]
 fn primary_is_lowest_slot_regardless_of_json_key_order() {
     // "6" written before "5": old HashMap code could read either radio.
