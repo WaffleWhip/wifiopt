@@ -43,7 +43,12 @@ pub fn optimize(reg: &str, aps: Vec<ApInfo>, stale: usize, max_k: usize) -> Vec<
 
     let t_opt = std::time::Instant::now();
     let (r2, s2) = cost::optimize_band_bruteforce(&mem2, &c2, stale, max_k, "2g");
-    let (r5, s5) = cost::optimize_band_bruteforce(&mem5, &c5, stale, max_k, "5g");
+    // Only APs that get a 2G row are actually executed downstream. Pinning
+    // the rest keeps the 5G plan consistent with what will really happen.
+    let executable: std::collections::HashSet<String> =
+        r2.iter().map(|r| r.sn.clone()).collect();
+    let (r5, s5) =
+        cost::optimize_band_bruteforce_opt(&mem5, &c5, stale, max_k, "5g", Some(&executable));
     println!(
         "[{}] {reg}: bruteforce 2g groups={} exhaustive={} fallback={} | 5g groups={} exhaustive={} fallback={}",
         ts(),

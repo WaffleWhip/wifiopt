@@ -1,4 +1,4 @@
-use wifiopt::cost::{optimize_band, optimize_band_bruteforce};
+use wifiopt::cost::{optimize_band, optimize_band_bruteforce, optimize_band_bruteforce_opt};
 use wifiopt::graph::MemRow;
 
 fn mem(
@@ -146,6 +146,36 @@ fn reported_before_is_scanned_baseline_and_cluster_improves() {
     // Before is the scanned baseline: A scans B on 36 and ext1 on 48.
     let a = bf.iter().find(|r| r.sn == "A").unwrap();
     assert_eq!(a.ch_before, Some(36));
+}
+
+#[test]
+fn pinned_member_keeps_current_channel() {
+    // A device without a 2G row is never executed: its 5G channel must stay
+    // put even if moving would lower the cluster total.
+    let a = mem("A", vec!["aa:01"], Some(36), vec![36, 48], vec![("aa:02", 36, -50)]);
+    let b = mem("B", vec!["aa:02"], Some(36), vec![36, 48], vec![("aa:01", 36, -50)]);
+    let clusters = vec![vec!["A".to_string(), "B".to_string()]];
+    let exec: std::collections::HashSet<String> =
+        ["A".to_string()].into_iter().collect();
+    let (out, _) = optimize_band_bruteforce_opt(
+        &[a, b],
+        &clusters,
+        50,
+        4,
+        "5g",
+        Some(&exec),
+    );
+    let rb = out.iter().find(|r| r.sn == "B").unwrap();
+    assert_eq!(rb.ch_before, Some(36));
+    assert_eq!(rb.ch_after, 36);
+    assert_eq!(rb.status, "STAY");
+}
+
+#[test]
+fn without_executable_hint_everyone_is_flexible() {
+    let (rows, clusters) = pair_fixture();
+    let (out, _) = optimize_band_bruteforce(&rows, &clusters, 50, 4, "5g");
+    assert!(out.iter().any(|r| r.status == "CHANGE"));
 }
 
 #[test]

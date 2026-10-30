@@ -332,6 +332,20 @@ pub fn optimize_band_bruteforce(
     max_k: usize,
     band: &str,
 ) -> (Vec<OptimizeRow>, BruteStats) {
+    optimize_band_bruteforce_opt(rows, cluster_sns, stale, max_k, band, None)
+}
+
+/// `executable`: SNs that will actually receive a row in the output table.
+/// Members outside it are pinned to their current channel: planning a move
+/// they never execute would make the neighbours' plan wrong.
+pub fn optimize_band_bruteforce_opt(
+    rows: &[MemRow],
+    cluster_sns: &[Vec<String>],
+    stale: usize,
+    max_k: usize,
+    band: &str,
+    executable: Option<&HashSet<String>>,
+) -> (Vec<OptimizeRow>, BruteStats) {
     let mut stats = BruteStats::default();
     let invalid_set: HashSet<&str> = HashSet::from(["00:00:00:00:00:00"]);
 
@@ -398,15 +412,19 @@ pub fn optimize_band_bruteforce(
         let mut usable: Vec<usize> = Vec::new();
         for &ri in members {
             let r = &rows[ri];
-            let possible = possible_channels(r, band);
-            if possible.is_empty() {
+            let poss = possible_channels(r, band);
+            if poss.is_empty() {
                 continue;
             }
+            let cur = r.own_channel.unwrap_or(poss[0]);
+            let pinned = executable.is_some_and(|set| !set.contains(&r.sn));
             usable.push(ri);
             maps.push(BfAp {
                 sn: r.sn.clone(),
-                cur: r.own_channel.unwrap_or(possible[0]),
-                possible,
+                // Pinned device: single candidate = its current channel, so
+                // the joint optimum cannot rely on a move it will never make.
+                possible: if pinned { vec![cur] } else { poss },
+                cur,
                 nb: Vec::new(),
             });
         }
