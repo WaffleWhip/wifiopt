@@ -745,11 +745,24 @@ fn health(state: &Arc<State>) -> serde_json::Value {
     let latest_date = runs.first().and_then(|r| r["date"].as_str()).unwrap_or("");
     let total_bytes: u64 = runs.iter().filter_map(|r| r["bytes"].as_u64()).sum();
     let jobs = list_jobs(state);
-    let failed_jobs: Vec<_> = jobs
+    // Health must reflect current state, not history: a failure from days ago
+    // that has since been superseded by successful runs is not an incident.
+    let cutoff = chrono::Utc::now() - chrono::Duration::hours(24);
+    let recent_failures: Vec<_> = jobs
         .iter()
         .filter(|j| j.status == "failed")
+        .filter(|j| {
+            chrono::DateTime::parse_from_rfc3339(&j.started_at)
+                .map(|t| t.with_timezone(&chrono::Utc) >= cutoff)
+                .unwrap_or(false)
+        })
+        .collect();
+    let failed_jobs: Vec<_> = recent_failures
+        .iter()
         .take(5)
-        .map(|j| serde_json::json!({"id": j.id, "date": j.date, "startedAt": j.started_at, "finishedAt": j.finished_at}))
+        .map(|j| {
+            serde_json::json!({"id": j.id, "date": j.date, "startedAt": j.started_at, "finishedAt": j.finished_at})
+        })
         .collect();
     let mut tally = HashMap::new();
     for j in &jobs {
@@ -771,7 +784,7 @@ fn health(state: &Arc<State>) -> serde_json::Value {
     let cron_errors = latest_cron_errors(cfg);
     let ok = bin_meta.is_some()
         && db_status == "ok"
-        && failed_jobs.is_empty()
+        && recent_failures.is_empty()
         && cron_errors.is_empty();
     serde_json::json!({
         "ok": ok,
