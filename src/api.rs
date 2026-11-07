@@ -100,7 +100,7 @@ fn mysql_opts() -> Option<mysql::Opts> {
         return None;
     }
     let opts = mysql::OptsBuilder::new()
-        .ip_or_hostname(Some(env("MYSQL_HOST", "192.168.41.115")))
+        .ip_or_hostname(Some(env("MYSQL_HOST", "127.0.0.1")))
         .tcp_port(env("MYSQL_PORT", "3306").parse().unwrap_or(3306))
         .user(Some(user))
         .pass(std::env::var("MYSQL_PASSWORD").ok())
@@ -340,7 +340,7 @@ pub fn start_job(
                         "mysql://{}:{}@{}:{}/{}",
                         user,
                         std::env::var("MYSQL_PASSWORD").unwrap_or_default(),
-                        env("MYSQL_HOST", "192.168.41.115"),
+                        env("MYSQL_HOST", "127.0.0.1"),
                         env("MYSQL_PORT", "3306"),
                         env("MYSQL_DATABASE", "wifi_optimization")
                     );
@@ -1108,7 +1108,7 @@ pub fn route(state: &Arc<State>, req: &Req) -> (u16, String) {
         ("GET", ["api", "settings"]) => {
             let f = parse_env_file(Path::new(".env"));
             ok(&serde_json::json!({
-                "host": if env_get(&f, "MYSQL_HOST").is_empty() { "192.168.41.115".into() } else { env_get(&f, "MYSQL_HOST") },
+                "host": if env_get(&f, "MYSQL_HOST").is_empty() { "127.0.0.1".into() } else { env_get(&f, "MYSQL_HOST") },
                 "port": if env_get(&f, "MYSQL_PORT").is_empty() { "3306".into() } else { env_get(&f, "MYSQL_PORT") },
                 "user": env_get(&f, "MYSQL_USER"),
                 "database": if env_get(&f, "MYSQL_DATABASE").is_empty() { "wifi_optimization".into() } else { env_get(&f, "MYSQL_DATABASE") },

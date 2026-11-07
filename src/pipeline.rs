@@ -13,6 +13,46 @@ pub fn ts() -> String {
     chrono::Local::now().format("%H:%M:%S").to_string()
 }
 
+const PLAN_2G: [u8; 3] = [1, 6, 11];
+const PLAN_5G: [u8; 9] = [36, 40, 44, 48, 149, 153, 157, 161, 165];
+
+/// Reject a plan that would leave a device on an unusable channel (off-plan
+/// 2.4 GHz, DFS 5 GHz, or channel 0). The upload path truncates the day table
+/// before writing, so a bad plan must never reach MySQL.
+pub fn validate_plan(reg: &str, rows: &[OutputRow]) -> Result<()> {
+    if rows.is_empty() {
+        anyhow::bail!("{reg}: empty plan");
+    }
+    let mut bad2 = 0usize;
+    let mut bad5 = 0usize;
+    let mut first = String::new();
+    for r in rows {
+        let ok2 = r.ch_after_2g.is_some_and(|c| PLAN_2G.contains(&c));
+        let ok5 = r.ch_after_5g.is_none_or(|c| PLAN_5G.contains(&c));
+        if !ok2 || !ok5 {
+            if !ok2 {
+                bad2 += 1;
+            }
+            if !ok5 {
+                bad5 += 1;
+            }
+            if first.is_empty() {
+                first = format!(
+                    "sn={} ch_after_2g={:?} ch_after_5g={:?}",
+                    r.sn, r.ch_after_2g, r.ch_after_5g
+                );
+            }
+        }
+    }
+    if bad2 > 0 || bad5 > 0 {
+        anyhow::bail!(
+            "{reg}: off_plan_2g={bad2} bad_5g={bad5} of {} rows, first {first}",
+            rows.len()
+        );
+    }
+    Ok(())
+}
+
 pub fn optimize(reg: &str, aps: Vec<ApInfo>, stale: usize, max_k: usize) -> Vec<OutputRow> {
     let updated_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -107,6 +147,22 @@ pub fn optimize(reg: &str, aps: Vec<ApInfo>, stale: usize, max_k: usize) -> Vec<
 
 pub fn run(opts: &Options) -> Result<Summary> {
     std::fs::create_dir_all(&opts.out).context("out dir")?;
+    // Preflight: a full-day upload truncates wifi_optimize_<date> before any
+    // plan is written. Refuse to truncate when an input table is missing or
+    // still empty (late ingest), so the previous table is not destroyed.
+    if opts.upload && opts.regs.len() >= 7 {
+        for reg in &opts.regs {
+            let n = db::count_rows(opts, reg)
+                .with_context(|| format!("preflight discover count {reg}"))?;
+            if n == 0 {
+                anyhow::bail!(
+                    "preflight: discover_interference_reborn_{}_{reg} has 0 rows; refusing to truncate",
+                    opts.date
+                );
+            }
+            println!("[{}] preflight {reg}: {n} discover rows", ts());
+        }
+    }
     // Upload path mirrors production (ensure + truncate + per-reg batched
     // INSERT pipelined with the next region's compute). Dormant by default.
     let table = if opts.upload {
@@ -139,6 +195,22 @@ pub fn run(opts: &Options) -> Result<Summary> {
                 );
                 let out = optimize(reg, aps, opts.stale, opts.bruteforce_max_k);
                 total += out.len();
+                let plan_ok = match validate_plan(reg, &out) {
+                    Ok(()) => {
+                        println!(
+                            "[{}] {reg}: plan gate ok rows={} 5g_planned={}",
+                            ts(),
+                            out.len(),
+                            out.iter().filter(|r| r.ch_after_5g.is_some()).count()
+                        );
+                        true
+                    }
+                    Err(e) => {
+                        eprintln!("[{}] {reg}: plan gate rejected output: {e:#}", ts());
+                        failed.push(reg.clone());
+                        false
+                    }
+                };
                 let path = format!("{}/wifi_optimize_{}_{}.csv", opts.out, opts.date, reg);
                 let t_wr = std::time::Instant::now();
                 if let Err(e) = output::write_csv(&path, &out) {
@@ -151,7 +223,7 @@ pub fn run(opts: &Options) -> Result<Summary> {
                         out.len(),
                         t_wr.elapsed().as_secs_f64()
                     );
-                    if let Some(t) = table.clone() {
+                    if let Some(t) = table.clone().filter(|_| plan_ok) {
                         if let Some(prev) = prev_upload.take() {
                             match prev.join() {
                                 Ok(Ok(n)) => println!("[{}] upload committed {n} rows", ts()),
@@ -209,4 +281,62 @@ pub fn run(opts: &Options) -> Result<Summary> {
         anyhow::bail!("failed regions: {}", failed.join(","));
     }
     Ok(summary)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(sn: &str, ch2: u8, ch5: Option<u8>) -> OutputRow {
+        OutputRow {
+            reg: "reg1".into(),
+            sn: sn.into(),
+            clusterid_2g: None,
+            ch_before_2g: Some(ch2),
+            cost_before_2g: Some(0.0),
+            ch_after_2g: Some(ch2),
+            cost_after_2g: Some(0.0),
+            status_2g: Some("STAY".into()),
+            clusterid_5g: None,
+            ch_before_5g: ch5,
+            cost_before_5g: Some(0.0),
+            ch_after_5g: ch5,
+            cost_after_5g: Some(0.0),
+            status_5g: Some("STAY".into()),
+            updated_at: "2026-10-30 00:00:00".into(),
+            node_id: None,
+            node_ip: None,
+            slot: None,
+            port: None,
+            onu_id: None,
+            regional: None,
+            witel: None,
+            cpe_product_class: None,
+        }
+    }
+
+    #[test]
+    fn plan_gate_accepts_plan_channels() {
+        let rows = vec![row("a", 1, Some(36)), row("b", 6, None), row("c", 11, Some(165))];
+        assert!(validate_plan("reg1", &rows).is_ok());
+    }
+
+    #[test]
+    fn plan_gate_rejects_offplan_2g() {
+        assert!(validate_plan("reg1", &[row("a", 5, None)]).is_err());
+    }
+
+    #[test]
+    fn plan_gate_rejects_dfs_and_zero_5g() {
+        assert!(validate_plan("reg1", &[row("a", 1, Some(112))]).is_err());
+        assert!(validate_plan("reg1", &[row("a", 1, Some(0))]).is_err());
+    }
+
+    #[test]
+    fn plan_gate_rejects_empty_and_missing_2g() {
+        assert!(validate_plan("reg1", &[]).is_err());
+        let mut r = row("a", 1, None);
+        r.ch_after_2g = None;
+        assert!(validate_plan("reg1", &[r]).is_err());
+    }
 }

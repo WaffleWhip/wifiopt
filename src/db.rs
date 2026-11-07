@@ -14,10 +14,11 @@ pub struct DiscoverRow {
 }
 
 const DISCOVER_SQL: &str = "SELECT `CPE_Serial_Number`, `channel_ont`, `channel_ont5Ghz`, `json_config`, `json_neighbor` FROM `{table}`";
+const COUNT_SQL: &str = "SELECT COUNT(*) FROM `{table}`";
 
 /// Every statement the fetch path may issue. Guardrail: all must be SELECT.
 pub fn all_statements() -> Vec<String> {
-    vec![DISCOVER_SQL.to_string()]
+    vec![DISCOVER_SQL.to_string(), COUNT_SQL.to_string()]
 }
 
 pub fn with_retry<F, T>(mut f: F) -> Result<T>
@@ -101,5 +102,17 @@ pub fn stream_aps(opts: &Options, reg: &str, mut f: impl FnMut(ApInfo)) -> Resul
             }
         }
         Ok(n)
+    })
+}
+
+/// Row count for the preflight gate. Read-only, like the fetch path.
+pub fn count_rows(opts: &Options, reg: &str) -> Result<u64> {
+    let table = check_name(&opts.date, reg)?;
+    let sql = COUNT_SQL.replace("{table}", &table);
+    with_retry(|| {
+        let pool = mysql::Pool::new(opts.db_url.as_str()).context("db pool")?;
+        let mut conn = pool.get_conn().context("db conn")?;
+        let n: Option<u64> = conn.query_first(&sql)?;
+        Ok(n.unwrap_or(0))
     })
 }

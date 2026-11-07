@@ -3,3 +3,7 @@ out/
 .superpowers/
 .env
 !.env.example
+docs/
+AGENTS.md
+agents.md
+
